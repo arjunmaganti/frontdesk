@@ -355,3 +355,75 @@ To prevent staff from being repeatedly disrupted by the same unanswerable questi
 2. **Q&A Recording**: The first reply the Admin sends to this visitor is captured as the resolved answer and stored alongside the question in the `escalations_cache` table.
 3. **Fuzzy Retrieval**: Future incoming messages are fuzzy-matched against this cache using `difflib.SequenceMatcher` (threshold > 0.85). On a hit, the bot replies instantly using the staff's previously recorded answer and bypasses the LLM entirely.
 
+---
+
+## 12. Multi-Tenant Scaled Architecture (Supabase & Telegram-Native Onboarding)
+
+This section describes the architecture for scaling the single-tenant bot platform into a multi-tenant service running off a single bot instance.
+
+### A. Telegram-Native Onboarding State Machine
+Instead of a separate Web UI, the bot supports a self-contained registration flow:
+1. **Initiation**: The business owner registers their business by sending `/register` directly to the bot.
+2. **Onboarding States**: The bot tracks registration progress in a temporary session table (`onboarding_state`) through an interactive questionnaire:
+   * **Business Name**: (e.g., "DM Hair Care") -> normalized to a unique `business_id` slug.
+   * **Agent Persona Name**: (e.g., "Kim").
+   * **Website URL**: (e.g., "https://www.dmhaircare.net").
+   * **Timezone**: Selected via Telegram inline buttons (common timezone list).
+3. **Immediate Admin Binding**: Since the registration is performed inside Telegram, the bot immediately binds the user's `chat_id` as the authorized `admin_chat_id` for that `business_id`.
+4. **Confirmation**: The bot generates the visitor link (`t.me/bot?start=v_[business_id]`) and queues a website crawl.
+
+### B. Supabase Database Schema (PostgreSQL & pgvector)
+We replace local SQLite files and local FAISS files with a hosted Supabase database instance.
+
+#### 1. `businesses` Table (Tenant Settings)
+* `business_id` (TEXT, Primary Key) - e.g., `"dmhaircare"`
+* `business_name` (TEXT)
+* `agent_name` (TEXT)
+* `website_url` (TEXT)
+* `business_phone` (TEXT)
+* `business_address` (TEXT)
+* `map_url` (TEXT)
+* `business_timezone` (TEXT)
+* `admin_chat_id` (TEXT)
+
+#### 2. `visitors` Table (User Sessions)
+* `visitor_chat_id` (TEXT, Primary Key)
+* `active_business_id` (TEXT, Foreign Key -> `businesses.business_id`)
+
+#### 3. `admin_relay` Table (Multi-Tenant Relays)
+* `visitor_chat_id` (TEXT, Primary Key)
+* `business_id` (TEXT, Foreign Key)
+* `is_paused` (INTEGER)
+* `pending_question` (TEXT)
+
+#### 4. `knowledge_chunks` Table (Unified Vector DB)
+* `id` (UUID, Primary Key)
+* `business_id` (TEXT, Foreign Key -> `businesses.business_id`)
+* `content` (TEXT)
+* `embedding` (VECTOR(1536)) - Powered by pgvector (uses Gemini Embeddings)
+* `metadata` (JSONB)
+
+#### 5. `escalations_cache` Table (Fuzzy Match Cache)
+* `id` (INTEGER, Primary Key)
+* `business_id` (TEXT, Foreign Key)
+* `question` (TEXT)
+* `answer` (TEXT)
+* `timestamp` (REAL)
+* *Constraint*: Unique index on `(business_id, question)`
+
+### C. Database-Backed Crawler Queue (`crawl_jobs`)
+To isolate long-running crawl processes, we implement a persistent queue:
+1. **Job Table**:
+   * `id` (UUID, Primary Key)
+   * `business_id` (TEXT, Foreign Key -> `businesses.business_id`)
+   * `website_url` (TEXT)
+   * `status` (TEXT) - `'pending'`, `'processing'`, `'completed'`, `'failed'`
+   * `error_message` (TEXT, Nullable)
+   * `created_at` / `updated_at` (TIMESTAMPTZ)
+2. **Background Worker (`worker.py`)**:
+   * Runs as a separate systemd process on the VPS.
+   * Fetches pending tasks using row-locking:
+     `SELECT * FROM crawl_jobs WHERE status = 'pending' LIMIT 1 FOR UPDATE SKIP LOCKED`
+   * Updates status to `'processing'`, executes `crawl_site(website_url)`, generates Gemini embeddings, replaces database rows in `knowledge_chunks`, and updates the status to `'completed'`.
+   * Sends a confirmation Telegram notification to the `admin_chat_id` of the business once complete.
+
