@@ -24,6 +24,8 @@ BUSINESS_TIMEZONE = os.getenv("BUSINESS_TIMEZONE", "America/Los_Angeles")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD", "")
+SUPABASE_DB_HOST = os.getenv("SUPABASE_DB_HOST", "aws-1-us-west-1.pooler.supabase.com")
+SUPABASE_DB_PORT = int(os.getenv("SUPABASE_DB_PORT", "6543"))
 
 # Guardrails & Limits
 DAILY_MESSAGE_CAP = int(os.getenv("DAILY_MESSAGE_CAP", "200"))
