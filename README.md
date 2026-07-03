@@ -36,16 +36,13 @@ Use the compiler script to initialize a new business workspace folder (e.g. `/Us
 ```bash
 python3 utility/build.py --init /Users/username/desktop/haircuts_config/
 ```
+Optionally, pass a website URL to automatically crawl the site and seed the workspace with Markdown pages during initialization:
+```bash
+python3 utility/build.py --init /Users/username/desktop/haircuts_config/ --url https://example-business.com/
+```
 This generates a template folder containing:
 * `.env`: Configuration keys (Telegram token, Owner ID, Daily Cap, OpenAI API key).
 * `visitor_policy.md` / `faq.md`: Sample Markdown documents.
-
-### Step 2.5: Auto-Generate Markdown via Crawling (Optional)
-If the business already has a public website, you can crawl it to auto-generate your Markdown policy files instead of writing them manually:
-```bash
-.venv/bin/python utility/crawl.py --url https://example-salon.com --out /Users/username/desktop/haircuts_config/
-```
-This recursively downloads body text blocks and filters out noise like headers and footers.
 
 ### Step 3: Populate Configs & Data
 1. Open the generated `/Users/username/desktop/haircuts_config/.env` and paste your API keys.

@@ -7,6 +7,11 @@ import tempfile
 import zipfile
 from dotenv import load_dotenv
 
+try:
+    from utility.crawl import crawl_site
+except ImportError:
+    from crawl import crawl_site
+
 def compile_index(src_dir, temp_index_dir):
     """Loads markdown files from src_dir, runs embeddings, and saves FAISS index to temp_index_dir."""
     print("Loading dependencies for vector index generation...")
@@ -110,7 +115,7 @@ def build_package(src_dir, out_zip):
     print("2. Run: pip install -r requirements.txt")
     print("3. Start the bot directly using: python main.py")
 
-def init_workspace(init_dir):
+def init_workspace(init_dir, url=None):
     init_dir = os.path.abspath(init_dir)
     print(f"Initializing new client configuration workspace at: {init_dir}")
     os.makedirs(init_dir, exist_ok=True)
@@ -130,35 +135,46 @@ def init_workspace(init_dir):
         else:
             print("Warning: .env.example template not found. Please create .env manually.")
 
-    # 2. Create sample visitor policy
-    sample_policy = os.path.join(init_dir, "visitor_policy.md")
-    with open(sample_policy, "w") as f:
-        f.write("# Visitor Policy\n\nWelcome! Please check in at reception. Wi-Fi: Office-Guest / WelcomeFrontDesk2026")
-    print(f"Created sample policy doc: {sample_policy}")
+    # 2. Populate Workspace Data
+    if url:
+        # Normalize target URL
+        if not url.startswith("http://") and not url.startswith("https://"):
+            url = "https://" + url
+        print(f"\n🕸️ Web crawl URL provided: {url}")
+        print("Running site crawler to seed the workspace Markdown files...")
+        crawl_site(url, init_dir, max_pages=15, max_depth=2)
+    else:
+        # Create default placeholders
+        # Create sample visitor policy
+        sample_policy = os.path.join(init_dir, "visitor_policy.md")
+        with open(sample_policy, "w") as f:
+            f.write("# Visitor Policy\n\nWelcome! Please check in at reception. Wi-Fi: Office-Guest / WelcomeFrontDesk2026")
+        print(f"Created sample policy doc: {sample_policy}")
 
-    # 3. Create sample FAQ
-    sample_faq = os.path.join(init_dir, "faq.md")
-    with open(sample_faq, "w") as f:
-        f.write("# Frequently Asked Questions\n\n## Where is the restroom?\nIt is located down the main hall on the left. Code: 2468#")
-    print(f"Created sample FAQ doc: {sample_faq}")
+        # Create sample FAQ
+        sample_faq = os.path.join(init_dir, "faq.md")
+        with open(sample_faq, "w") as f:
+            f.write("# Frequently Asked Questions\n\n## Where is the restroom?\nIt is located down the main hall on the left. Code: 2468#")
+        print(f"Created sample FAQ doc: {sample_faq}")
 
     print(f"\nSuccessfully initialized workspace '{os.path.basename(init_dir)}'!")
     print("Next steps:")
     print(f"1. Open and fill in the API keys in: {env_target}")
-    print(f"2. Add your custom policy documents (.md) to: {init_dir}")
+    print(f"2. Verify or add policy documents (.md) inside: {init_dir}")
     print(f"3. Build and package the ZIP using:")
     print(f"   python3 utility/build.py --src {init_dir} --out dist/deploy_{os.path.basename(init_dir)}.zip")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Front Desk Bot Compiler & Packager")
     parser.add_argument("--init", help="Path to initialize a new client configuration directory")
+    parser.add_argument("--url", help="Optional website URL to crawl and seed the workspace (use alongside --init)")
     parser.add_argument("--src", help="Path to the tenant's local directory containing .env and markdown files")
     parser.add_argument("--out", help="Path to save the generated deployable ZIP file (e.g. dist/haircuts.zip)")
 
     args = parser.parse_args()
 
     if args.init:
-        init_workspace(args.init)
+        init_workspace(args.init, args.url)
     elif args.src and args.out:
         build_package(args.src, args.out)
     else:

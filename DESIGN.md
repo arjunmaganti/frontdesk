@@ -87,6 +87,10 @@ To generate template configurations and sample markdown files in a target direct
 ```bash
 python3 utility/build.py --init /path/to/haircuts_workspace
 ```
+Optionally, pass a website URL (`--url`) during initialization to automatically crawl the site and populate the workspace with real business pages instead of placeholder templates:
+```bash
+python3 utility/build.py --init /path/to/haircuts_workspace --url https://munjelaglow.com/
+```
 **Action**:
 1. Creates the target directory `/path/to/haircuts_workspace` (if it does not exist).
 2. Copies `.env.example` to `/path/to/haircuts_workspace/.env`.
