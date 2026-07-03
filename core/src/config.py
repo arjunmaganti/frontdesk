@@ -19,6 +19,7 @@ AGENT_NAME = os.getenv("AGENT_NAME", "Frontdesk")
 BUSINESS_PHONE = os.getenv("BUSINESS_PHONE", "")
 BUSINESS_ADDRESS = os.getenv("BUSINESS_ADDRESS", "")
 MAP_URL = os.getenv("MAP_URL", "")
+WEBSITE_URL = os.getenv("WEBSITE_URL", "")
 
 # Guardrails & Limits
 DAILY_MESSAGE_CAP = int(os.getenv("DAILY_MESSAGE_CAP", "200"))

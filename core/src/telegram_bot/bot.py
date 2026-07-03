@@ -44,10 +44,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"How can I assist you today? 😊"
         )
         
-        # Setup welcome markup with Call and Map buttons
+        # Setup welcome markup with website and map buttons
         welcome_buttons = []
-        if getattr(config, "BUSINESS_PHONE", ""):
-            welcome_buttons.append(InlineKeyboardButton("📞 Call Us", url=f"tel:{config.BUSINESS_PHONE}"))
+        website_url = getattr(config, "WEBSITE_URL", "")
+        if website_url:
+            welcome_buttons.append(InlineKeyboardButton("🌐 Visit Website", url=website_url))
         if getattr(config, "MAP_URL", ""):
             welcome_buttons.append(InlineKeyboardButton("📍 View Map", url=config.MAP_URL))
             
@@ -243,8 +244,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Determine if we should append buttons based on content keywords
         buttons = []
         response_lower = cached_answer.lower()
-        if getattr(config, "BUSINESS_PHONE", "") and any(kw in response_lower for kw in ["phone", "call", "tel", "contact", "reach us", "number", "408-"]):
-            buttons.append(InlineKeyboardButton("📞 Call Us Now", url=f"tel:{config.BUSINESS_PHONE}"))
+        website_url = getattr(config, "WEBSITE_URL", "")
+        if website_url and any(kw in response_lower for kw in ["phone", "call", "tel", "contact", "reach us", "number", "website", "email"]):
+            buttons.append(InlineKeyboardButton("🌐 Visit Website", url=website_url))
         if getattr(config, "MAP_URL", "") and any(kw in response_lower for kw in ["location", "located", "address", "find us", "where", "saratoga", "map"]):
             buttons.append(InlineKeyboardButton("📍 View Map", url=config.MAP_URL))
         markup = InlineKeyboardMarkup([buttons]) if buttons else None
@@ -345,9 +347,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons = []
         response_lower = final_response.lower()
         
-        # Phone button if config has phone and response mentions contact/phone/call/tel
-        if getattr(config, "BUSINESS_PHONE", "") and any(kw in response_lower for kw in ["phone", "call", "tel", "contact", "reach us", "number", "408-"]):
-            buttons.append(InlineKeyboardButton("📞 Call Us Now", url=f"tel:{config.BUSINESS_PHONE}"))
+        # Website button if response mentions contact/phone/call/tel/email
+        website_url = getattr(config, "WEBSITE_URL", "")
+        if website_url and any(kw in response_lower for kw in ["phone", "call", "tel", "contact", "reach us", "number", "website", "email"]):
+            buttons.append(InlineKeyboardButton("🌐 Visit Website", url=website_url))
             
         # Map button if config has map URL and response mentions location/map/address
         if getattr(config, "MAP_URL", "") and any(kw in response_lower for kw in ["location", "located", "address", "find us", "where", "saratoga", "map"]):
