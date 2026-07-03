@@ -61,6 +61,12 @@ async def crawl_site_async(start_url, out_dir, max_pages, max_depth):
                     print(f"⚠️ Warning: Crawl succeeded but extracted markdown is empty for {url}")
                     continue
                 
+                # Make the output LLM-friendly by stripping raw markdown links and images
+                # 1. Remove markdown images: ![alt](url)
+                markdown_content = re.sub(r"!\[.*?\]\(.*?\)", "", markdown_content)
+                # 2. Convert markdown links [text](url) to plain text "text" (including empty links)
+                markdown_content = re.sub(r"\[(.*?)\]\([^)]+\)", r"\1", markdown_content)
+                
                 # Generate index file name and path
                 filename = clean_filename(url, domain)
                 filepath = os.path.join(out_dir, filename)
