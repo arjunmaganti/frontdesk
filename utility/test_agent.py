@@ -20,7 +20,7 @@ def setup_test_environment(src_dir):
         
     if not os.path.exists(src_index) or not os.listdir(src_index):
         print(f"Error: Compiled vector index not found in {src_index}. Please run build first:")
-        print(f"       python3 scripts/build.py --src {src_dir} --out dist/test.zip")
+        print(f"       python3 utility/build.py --src {src_dir} --out dist/test.zip")
         sys.exit(1)
 
     # 1. Load keys into active environment

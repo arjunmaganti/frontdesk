@@ -4,7 +4,7 @@ This document outlines the architecture, file structure, developer roles, and de
 
 This system is structured as a **Builder & Runtime Platform**:
 1. **The Codebase**: A generic Python application (`core/`) containing the bot runner, LangGraph agent, and search index query service.
-2. **The Builder**: A packaging script (`scripts/build.py`) that compiles a business owner's local directory (containing their configuration and raw Markdown documentation) and generates a self-contained, deploy-ready ZIP file for their server.
+2. **The Builder**: A packaging script (`utility/build.py`) that compiles a business owner's local directory (containing their configuration and raw Markdown documentation) and generates a self-contained, deploy-ready ZIP file for their server.
 
 ---
 
@@ -71,20 +71,20 @@ frontdesk/
 │       └── search/             # [Developer B] FAISS search service
 │           ├── __init__.py
 │           └── service.py      # Loads local FAISS vectors and queries them
-└── scripts/                    # Compiler utilities
+└── utility/                    # Compiler utilities
     └── build.py                # Compiles client folder and zips a deployable package
 ```
 
 ---
 
-## 3. The Bot Compiler & Packaging Mechanism (`scripts/build.py`)
+## 3. The Bot Compiler & Packaging Mechanism (`utility/build.py`)
 
 The builder script handles both **initialization** of a client workspace and **packaging** of a completed client bot.
 
 ### A. Initializing a Client Workspace
 To generate template configurations and sample markdown files in a target directory:
 ```bash
-python3 scripts/build.py --init /path/to/haircuts_workspace
+python3 utility/build.py --init /path/to/haircuts_workspace
 ```
 **Action**:
 1. Creates the target directory `/path/to/haircuts_workspace` (if it does not exist).
@@ -94,7 +94,7 @@ python3 scripts/build.py --init /path/to/haircuts_workspace
 ### B. Packaging a Client Bot
 Once the client config and documentation are populated, compile and bundle the bot:
 ```bash
-python3 scripts/build.py --src /path/to/haircuts_workspace --out dist/deploy_haircuts.zip
+python3 utility/build.py --src /path/to/haircuts_workspace --out dist/deploy_haircuts.zip
 ```
 **Compiler Actions**:
 1. **Load Keys**: Loads environment variables from the client's local `/path/to/haircuts_workspace/.env` to authenticate with embedding APIs.
@@ -161,9 +161,9 @@ To protect business owners from runaway API costs and spam, the Telegram Bot Han
   6. Implement the local Daily Message Cap and Rate Limiting database checks.
 
 ### 🧑‍💻 Developer B: Search Service & Build Packaging Script
-* **Deliverables**: `core/src/search/*`, `scripts/build.py`.
+* **Deliverables**: `core/src/search/*`, `utility/build.py`.
 * **Key Tasks**:
-  1. Write `scripts/build.py` to automate Markdown parsing, FAISS compilation, file staging, and standalone ZIP packaging.
+  1. Write `utility/build.py` to automate Markdown parsing, FAISS compilation, file staging, and standalone ZIP packaging.
   2. Write `core/src/search/service.py` to load the compiled FAISS vector index from the local `/index` folder in RAM and handle query queries.
   3. Set up mock business files locally to verify the build script output.
 
@@ -213,7 +213,7 @@ pip install -r requirements.txt
 ### Step 2: Initialize the Client Workspace Folder
 Use the builder script to automatically generate the template folder structure on your laptop (e.g. `/Users/username/desktop/haircuts_config/`):
 ```bash
-python3 scripts/build.py --init /Users/username/desktop/haircuts_config/
+python3 utility/build.py --init /Users/username/desktop/haircuts_config/
 ```
 ### Step 4: Run and Test Locally
 

@@ -146,7 +146,7 @@ def init_workspace(init_dir):
     print(f"1. Open and fill in the API keys in: {env_target}")
     print(f"2. Add your custom policy documents (.md) to: {init_dir}")
     print(f"3. Build and package the ZIP using:")
-    print(f"   python3 scripts/build.py --src {init_dir} --out dist/deploy_{os.path.basename(init_dir)}.zip")
+    print(f"   python3 utility/build.py --src {init_dir} --out dist/deploy_{os.path.basename(init_dir)}.zip")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Front Desk Bot Compiler & Packager")

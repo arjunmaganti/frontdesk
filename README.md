@@ -14,7 +14,7 @@ frontdesk/
 ├── core/                       # Shared bot runtime logic
 │   ├── main.py                 # Bot runner (executes flat from unzipped deployable)
 │   └── src/                    # Bot module code (agent, search loaders, config, and bot handlers)
-└── scripts/                    # Shared CLI tooling
+└── utility/                    # Shared CLI tooling
     ├── build.py                # Workspace initializer & vector compiler / packager
     └── test_agent.py           # CLI-based local chat simulator
 ```
@@ -34,7 +34,7 @@ pip install -r requirements.txt
 ### Step 2: Initialize a Client Workspace
 Use the compiler script to initialize a new business workspace folder (e.g. `/Users/username/desktop/haircuts_config/`):
 ```bash
-python3 scripts/build.py --init /Users/username/desktop/haircuts_config/
+python3 utility/build.py --init /Users/username/desktop/haircuts_config/
 ```
 This generates a template folder containing:
 * `.env`: Configuration keys (Telegram token, Owner ID, Daily Cap, OpenAI API key).
@@ -47,7 +47,7 @@ This generates a template folder containing:
 ### Step 4: Build and Package
 Compile the client's documents and build the standalone ZIP deployment package:
 ```bash
-python3 scripts/build.py --src /Users/username/desktop/haircuts_config/ --out dist/deploy_haircuts.zip
+python3 utility/build.py --src /Users/username/desktop/haircuts_config/ --out dist/deploy_haircuts.zip
 ```
 This writes the standalone, deploy-ready **`dist/deploy_haircuts.zip`** file.
 
@@ -57,7 +57,7 @@ This writes the standalone, deploy-ready **`dist/deploy_haircuts.zip`** file.
 
 To test the bot's RAG queries, rate limiters, daily budget caps, and handoff flows locally in your terminal before deploying:
 ```bash
-python3 scripts/test_agent.py --src /Users/username/desktop/haircuts_config/
+python3 utility/test_agent.py --src /Users/username/desktop/haircuts_config/
 ```
 Type queries directly into the terminal prompt. You can simulate visitor inputs and the admin `/resolve` handoff commands in real-time.
 
