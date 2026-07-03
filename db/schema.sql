@@ -82,3 +82,18 @@ create table if not exists public.onboarding_states (
     business_timezone text,
     updated_at timestamptz not null default now()
 );
+
+-- 9. Create Business Load Table (Bulk Onboarding Staging)
+create table if not exists public.business_load (
+    id uuid primary key default gen_random_uuid(),
+    business_id text unique not null,
+    business_name text not null,
+    agent_name text not null default 'Kim',
+    website_url text not null,
+    business_timezone text not null default 'America/Los_Angeles',
+    admin_chat_id text,
+    status text not null default 'pending', -- 'pending' | 'processing' | 'completed' | 'failed'
+    error_message text,
+    created_at timestamptz not null default now(),
+    processed_at timestamptz
+);

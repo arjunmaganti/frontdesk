@@ -125,7 +125,19 @@ A separate, lightweight Python daemon process runs on the VPS to handle executio
 5. **Database Transaction**:
    Deletes previous vector chunks for that business from `knowledge_chunks` and inserts the new embedding records.
 6. **Callback Notification**:
-   Changes job status to `'completed'` and messages the business owner's `admin_chat_id` on Telegram: *"🚀 Onboarding complete! Your customer link is ready: t.me/your_bot?start=v_[business_id]"*.
+   Changes job status to `'completed'` and (if `admin_chat_id` is set) messages the business owner on Telegram: *"🚀 Onboarding complete! Your customer link is ready: t.me/your_bot?start=v_[business_id]"*.
+
+### C. Bulk Onboarding via Database Ingestion (`business_load` Table)
+To support bulk registration of businesses outside Telegram (e.g., uploading a CSV sheet of salons directly to the Supabase dashboard):
+1. **Staging Queue**: Business profiles are uploaded directly to the `business_load` table with a status of `'pending'`.
+2. **Ingestion Loop**:
+   * The background worker periodically scans for pending rows:
+     `SELECT * FROM business_load WHERE status = 'pending'`
+   * For each record, the worker:
+     1. Creates the business profile entry in the `businesses` table.
+     2. Automatically inserts a crawl job into the `crawl_jobs` table (which handles crawling, coordinates extraction, and vector index generation).
+     3. Marks the row in `business_load` as `'completed'` and sets `processed_at = now()`.
+3. **Dynamic Admin Binding**: If the `admin_chat_id` was left empty during the bulk upload, the business owner can activate their bot panel later by typing `/start a_[business_id]` to claim ownership.
 
 ---
 
