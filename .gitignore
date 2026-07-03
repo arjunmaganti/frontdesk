@@ -39,4 +39,5 @@ __pycache__/
 .env
 test_workspace/
 munjelaglow/
+test_crawl_greenfoliage/
 

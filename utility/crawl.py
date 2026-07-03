@@ -3,13 +3,14 @@ import os
 import sys
 import argparse
 import re
-from urllib.parse import urlparse, urljoin
+import asyncio
+from urllib.parse import urlparse
 
 try:
-    import requests
-    from bs4 import BeautifulSoup
+    import crawl4ai
+    from crawl4ai import AsyncWebCrawler
 except ImportError:
-    print("Error: Required libraries not installed. Please run: pip install requirements.txt")
+    print("Error: Required crawl4ai library not installed. Please run: pip install requirements.txt")
     sys.exit(1)
 
 def clean_filename(url, domain):
@@ -23,124 +24,81 @@ def clean_filename(url, domain):
     clean_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", path)
     return f"{clean_name}.md"
 
-def html_to_markdown(html_content, page_url):
-    """Parses HTML, removes menus/headers/footers, and converts body elements to clean Markdown."""
-    soup = BeautifulSoup(html_content, "html.parser")
-    
-    # 1. Strip non-content elements to avoid RAG noise
-    for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
-        tag.decompose()
-        
-    # Attempt to locate the main content area first, fallback to body
-    content_area = soup.find("main") or soup.find("article") or soup.find("body")
-    if not content_area:
-        return ""
-        
-    markdown_lines = []
-    
-    # Extract page title
-    title = soup.title.string if soup.title else ""
-    if title:
-        markdown_lines.append(f"# {title.strip()}\n")
-        markdown_lines.append(f"Source URL: {page_url}\n\n---\n")
-
-    # Traverse elements and format to markdown
-    for element in content_area.find_all(["h1", "h2", "h3", "h4", "p", "li"]):
-        text = element.get_text().strip()
-        if not text:
-            continue
-            
-        tag_name = element.name
-        if tag_name == "h1":
-            markdown_lines.append(f"\n# {text}\n")
-        elif tag_name == "h2":
-            markdown_lines.append(f"\n## {text}\n")
-        elif tag_name == "h3":
-            markdown_lines.append(f"\n### {text}\n")
-        elif tag_name == "h4":
-            markdown_lines.append(f"\n#### {text}\n")
-        elif tag_name == "p":
-            markdown_lines.append(f"\n{text}\n")
-        elif tag_name == "li":
-            # Check if parent is an ordered list
-            is_ordered = element.parent and element.parent.name == "ol"
-            bullet = "1." if is_ordered else "*"
-            markdown_lines.append(f"{bullet} {text}")
-            
-    return "\n".join(markdown_lines)
-
-def crawl_site(start_url, out_dir, max_pages, max_depth):
+async def crawl_site_async(start_url, out_dir, max_pages, max_depth):
+    """Asynchronously crawls the website using Crawl4AI."""
     os.makedirs(out_dir, exist_ok=True)
     
     parsed_start = urlparse(start_url)
     domain = parsed_start.netloc
     
     visited = set()
-    queue = [(start_url, 0)]  # Tuple: (url, depth)
+    queue = [(start_url, 0)]  # Queue contains tuples of (url, depth)
     pages_crawled = 0
     
-    print(f"🕸️ Starting crawl of '{start_url}' (Domain: {domain})")
+    print(f"🕸️ Starting crawl of '{start_url}' using Crawl4AI (Domain: {domain})")
     print(f"Configuration: Max Pages: {max_pages} | Max Depth: {max_depth} | Output Dir: {out_dir}\n")
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-
-    while queue and pages_crawled < max_pages:
-        url, depth = queue.pop(0)
-        
-        if url in visited or depth > max_depth:
-            continue
+    async with AsyncWebCrawler() as crawler:
+        while queue and pages_crawled < max_pages:
+            url, depth = queue.pop(0)
             
-        visited.add(url)
-        print(f"[{pages_crawled + 1}] Crawling: {url} (Depth: {depth})")
-        
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
-            if response.status_code != 200:
-                print(f"⚠️ Failed to fetch {url} (Status: {response.status_code})")
+            if url in visited or depth > max_depth:
                 continue
                 
-            content_type = response.headers.get("Content-Type", "")
-            if "text/html" not in content_type:
-                print(f"⚠️ Skipping non-HTML page: {url} ({content_type})")
-                continue
+            visited.add(url)
+            print(f"[{pages_crawled + 1}] Crawling: {url} (Depth: {depth})")
+            
+            try:
+                # Crawl4AI renders Javascript natively via Playwright
+                result = await crawler.arun(url=url)
+                if not result.success:
+                    print(f"⚠️ Failed to fetch {url}")
+                    continue
                 
-            # 1. Convert HTML content to Markdown
-            markdown = html_to_markdown(response.text, url)
-            
-            # 2. Save file
-            filename = clean_filename(url, domain)
-            filepath = os.path.join(out_dir, filename)
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(markdown)
-            print(f"💾 Saved as: {filepath}")
-            
-            pages_crawled += 1
-            
-            # 3. Find links on the page for further crawling
-            if depth < max_depth:
-                soup = BeautifulSoup(response.text, "html.parser")
-                for link in soup.find_all("a", href=True):
-                    href = link["href"]
-                    # Resolve relative links
-                    absolute_url = urljoin(url, href)
-                    
-                    # Normalize URL (strip fragment anchor)
-                    absolute_url = absolute_url.split("#")[0]
-                    
-                    # Ensure the link belongs to the same domain and hasn't been visited
-                    parsed_link = urlparse(absolute_url)
-                    if parsed_link.netloc == domain and absolute_url not in visited:
-                        queue.append((absolute_url, depth + 1))
+                # Retrieve fully rendered markdown content
+                markdown_content = result.markdown
+                if not markdown_content:
+                    print(f"⚠️ Warning: Crawl succeeded but extracted markdown is empty for {url}")
+                    continue
+                
+                # Generate index file name and path
+                filename = clean_filename(url, domain)
+                filepath = os.path.join(out_dir, filename)
+                
+                # Prepend source URL metadata to document
+                formatted_markdown = f"# Source: {url}\n\n{markdown_content}"
+                
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(formatted_markdown)
+                print(f"💾 Saved as: {filepath}")
+                
+                pages_crawled += 1
+                
+                # Check for child links if within allowed depth
+                if depth < max_depth and result.links:
+                    internal_links = result.links.get("internal", [])
+                    for link_info in internal_links:
+                        link_url = link_info.get("href")
+                        if not link_url:
+                            continue
+                            
+                        # Strip hash fragments from target link
+                        link_url = link_url.split("#")[0]
+                        parsed_link = urlparse(link_url)
                         
-        except Exception as e:
-            print(f"⚠️ Error crawling {url}: {e}")
-            
-    print(f"\nCrawl complete. Successfully generated {pages_crawled} Markdown file(s) in: {out_dir}")
+                        # Only follow links belonging to the same host domain
+                        if parsed_link.netloc == domain and link_url not in visited:
+                            queue.append((link_url, depth + 1))
+                            
+            except Exception as e:
+                print(f"⚠️ Error crawling {url}: {e}")
+
+def crawl_site(start_url, out_dir, max_pages, max_depth):
+    """Synchronous entry wrapper for crawl_site_async."""
+    asyncio.run(crawl_site_async(start_url, out_dir, max_pages, max_depth))
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Business Website Policy Crawler")
+    parser = argparse.ArgumentParser(description="Business Website Policy Crawler (Crawl4AI Version)")
     parser.add_argument("--url", required=True, help="Homepage URL to start crawling from")
     parser.add_argument("--out", required=True, help="Directory to save output Markdown files (e.g. data/)")
     parser.add_argument("--max-pages", type=int, default=15, help="Maximum number of pages to crawl (default 15)")
@@ -148,7 +106,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Simple validation for URL scheme
+    # Prepend schema if missing
     target_url = args.url
     if not target_url.startswith("http://") and not target_url.startswith("https://"):
         target_url = "https://" + target_url
