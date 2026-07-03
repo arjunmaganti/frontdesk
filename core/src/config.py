@@ -21,6 +21,9 @@ BUSINESS_ADDRESS = os.getenv("BUSINESS_ADDRESS", "")
 MAP_URL = os.getenv("MAP_URL", "")
 WEBSITE_URL = os.getenv("WEBSITE_URL", "")
 BUSINESS_TIMEZONE = os.getenv("BUSINESS_TIMEZONE", "America/Los_Angeles")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD", "")
 
 # Guardrails & Limits
 DAILY_MESSAGE_CAP = int(os.getenv("DAILY_MESSAGE_CAP", "200"))
