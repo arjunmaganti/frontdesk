@@ -97,6 +97,7 @@ python3 utility/build.py --init /path/to/haircuts_workspace --url https://munjel
 3. Creates sample markdown files (`visitor_policy.md`, `faq.md`) inside the directory to serve as template documentation.
 
 ### B. Packaging a Client Bot
+If `WEBSITE_URL` is set in the client's `.env` file, the builder script will automatically crawl that URL and save pages directly into the workspace to refresh the Markdown files before compiling the index.
 Once the client config and documentation are populated, compile and bundle the bot:
 ```bash
 python3 utility/build.py --src /path/to/haircuts_workspace --out dist/deploy_haircuts.zip

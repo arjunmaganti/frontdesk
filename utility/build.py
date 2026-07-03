@@ -37,7 +37,7 @@ def compile_index(src_dir, temp_index_dir):
     print(f"Generated {len(chunks)} text chunks.")
 
     print("Generating vector embeddings and building FAISS index...")
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
     db = FAISS.from_documents(chunks, embeddings)
     
     os.makedirs(temp_index_dir, exist_ok=True)
@@ -77,7 +77,17 @@ def build_package(src_dir, out_zip):
         print("Error: GEMINI_API_KEY (or GOOGLE_API_KEY) is not set in the source directory's .env file.")
         sys.exit(1)
 
-    # 2. Create a temporary folder to assemble the deployable bundle
+    # 2. Check if a website URL is configured for build-time crawling
+    website_url = os.getenv("WEBSITE_URL")
+    if website_url:
+        # Normalize target URL
+        if not website_url.startswith("http://") and not website_url.startswith("https://"):
+            website_url = "https://" + website_url
+        print(f"\n🕸️ WEBSITE_URL detected inside .env: {website_url}")
+        print("Running web crawler to refresh policy documents before compiling index...")
+        crawl_site(website_url, src_dir, max_pages=15, max_depth=2)
+
+    # 3. Create a temporary folder to assemble the deployable bundle
     with tempfile.TemporaryDirectory() as temp_dir:
         print(f"Assembling package in temporary directory...")
 
@@ -105,6 +115,13 @@ def build_package(src_dir, out_zip):
         # D. Compile vector index directly into temp_dir/index/
         temp_index_dir = os.path.join(temp_dir, "index")
         compile_index(src_dir, temp_index_dir)
+        
+        # Copy compiled index back to client source workspace for local test simulation
+        local_src_index = os.path.join(src_dir, "index")
+        if os.path.exists(local_src_index):
+            shutil.rmtree(local_src_index)
+        shutil.copytree(temp_index_dir, local_src_index)
+        print(f"Copied compiled vector index back to client workspace: {local_src_index}")
 
         # E. Zip the temporary directory
         os.makedirs(os.path.dirname(out_zip), exist_ok=True)

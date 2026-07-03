@@ -25,12 +25,15 @@ def setup_test_environment(src_dir):
         sys.exit(1)
 
     # 1. Load keys into active environment
-    load_dotenv(src_env)
+    load_dotenv(src_env, override=True)
     print(f"Loaded config from {src_env}")
     
-    # Verify OpenAI Key is present
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY is not set in the client's .env file.")
+    # Verify Gemini Key is present
+    gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if gemini_key:
+        os.environ["GOOGLE_API_KEY"] = gemini_key
+    if not os.environ.get("GOOGLE_API_KEY"):
+        print("Error: GEMINI_API_KEY (or GOOGLE_API_KEY) is not set in the client's .env file.")
         sys.exit(1)
 
     # 2. Copy the index files to the local root ./index directory so core can find them

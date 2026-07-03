@@ -45,6 +45,11 @@ This generates a template folder containing:
 * `visitor_policy.md` / `faq.md`: Sample Markdown documents.
 
 ### Step 3: Populate Configs & Data
+If you want the build process to automatically crawl and refresh policy documents from a live website, set the `WEBSITE_URL` key inside your `.env` configuration:
+```env
+WEBSITE_URL=https://example-salon.com/
+```
+When you run the build command, it will automatically crawl the website and update the markdown files before compiling the vector search index.
 1. Open the generated `/Users/username/desktop/haircuts_config/.env` and paste your API keys.
 2. Edit or add any custom Markdown (`.md`) files inside the folder representing your client's business hours, policies, or procedures.
 
