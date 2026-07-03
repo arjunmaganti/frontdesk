@@ -73,16 +73,6 @@ create table if not exists public.crawl_jobs (
     updated_at timestamptz not null default now()
 );
 
--- 8. Create Onboarding States Table (Telegram Registration Progress tracker)
-create table if not exists public.onboarding_states (
-    chat_id text primary key,
-    current_step text not null default 'WAITING_BIZ_NAME',
-    business_name text,
-    agent_name text,
-    website_url text,
-    business_timezone text,
-    updated_at timestamptz not null default now()
-);
 
 -- 9. Create Business Load Table (Bulk Onboarding Staging)
 create table if not exists public.business_load (

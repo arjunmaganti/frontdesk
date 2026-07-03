@@ -15,30 +15,18 @@ Instead of deploying a separate bot package per business, a single shared Telegr
 
 ---
 
-## 2. Telegram-Native Onboarding State Machine
+## 2. Admin Activation via Deep Linking
 
-The bot guides a registering business owner through a structured conversational questionnaire, tracking progress via an `onboarding_state` table:
+Since business profiles and crawling tasks are loaded in bulk directly into the database (via `business_load`), the bot does not need a conversational signup wizard. 
 
-```mermaid
-stateDiagram-v2
-    [*] --> Idle : Owner sends /register
-    Idle --> WaitingForBizName : Prompt: "What is your business name?"
-    WaitingForBizName --> WaitingForAgentName : Input saved. Prompt: "What is the AI persona name?"
-    WaitingForAgentName --> WaitingForWebsite : Input saved. Prompt: "What is your website URL to crawl?"
-    WaitingForWebsite --> WaitingForTimezone : URL validated. Sends timezone selection buttons
-    WaitingForTimezone --> Compiling : Timezone selected. Queues crawl job in Supabase
-    Compiling --> Completed : Background worker finishes crawl & index compilation
-    Completed --> Idle : Bot sends Customer Deep Link
-```
+Instead, the admin/owner claims ownership of their pre-registered business using a simple deep link:
 
-### Onboarding Questionnaire Step-by-Step
-1. **`/register`**: The bot initializes a registration session for the user's `chat_id`.
-2. **Business Name**: (e.g., `"Munjela Glow"`) -> Normalizes name into a lowercase, URL-friendly unique slug `business_id` (e.g., `"munjelaglow"`).
-3. **Agent Persona**: (e.g., `"Kim"` or `"Amanda"`) -> Configures the bot's name when greeting customers for this salon.
-4. **Website URL**: (e.g., `"https://munjelaglow.com"`) -> The URL to crawl.
-5. **Timezone**: Owner clicks an inline keyboard option containing standard timezones (e.g., `America/Los_Angeles`).
-6. **Instant Ownership Binding**: The system registers the owner's Telegram `chat_id` as the authorized `admin_chat_id` for that `business_id`.
-7. **Task Queueing**: A crawl job is added to the `crawl_jobs` table, and the owner is notified that their assistant is compiling.
+### Admin Activation Flow
+1. **Link Generation**: When the business is staged, the system outputs an **Admin Activation Link**:
+   `https://t.me/your_bot?start=a_[business_id]`
+2. **Click & Start**: The business owner clicks the link on their mobile/desktop client, opening a thread with the bot, and taps **Start** (sending the command `/start a_[business_id]`).
+3. **Automatic Binding**: The bot intercepts the `a_` prefix, extracts the `business_id`, and writes the owner's Telegram `chat_id` to the `admin_chat_id` column of the corresponding row in the `businesses` table.
+4. **Completion Greeting**: The bot replies to confirm the setup: *"Greetings! You are now connected as the Admin of [Business Name]. You will receive customer escalations and chat alerts here."*
 
 ---
 
