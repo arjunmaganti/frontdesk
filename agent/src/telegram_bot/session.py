@@ -1,85 +1,67 @@
-import sqlite3
 import time
 import difflib
-from datetime import datetime
+from datetime import date
+from collections import defaultdict
 import src.config as config
 from src.db import get_pg_connection
 
-LOCAL_DB_PATH = "state.db"
+# In-memory dictionary to track rate limiting timestamps per chat ID
+_rate_limit_cache = defaultdict(list)
 
 # =====================================================================
-# 1. Local SQLite Helpers (Low-Latency Rate Limiter & Message Cap)
+# 1. Stateless / Hybrid Helpers (In-Memory Limiter & Supabase Message Cap)
 # =====================================================================
 
-def get_local_connection(db_path=LOCAL_DB_PATH):
-    """Establishes and returns a connection to the local SQLite database."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+def init_db():
+    """Dummy function for backward compatibility (no local SQLite db required)."""
+    pass
 
-def init_db(db_path=LOCAL_DB_PATH):
-    """Creates the local database tables for transient cap and rate calculations."""
-    with get_local_connection(db_path) as conn:
-        cursor = conn.cursor()
-        
-        # Daily usage table to track LLM costs
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS daily_usage (
-                date TEXT PRIMARY KEY,
-                count INTEGER DEFAULT 0
+def check_daily_cap() -> bool:
+    """Returns True if the global daily message cap has been exceeded, otherwise False."""
+    today = date.today().isoformat()
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT message_count FROM public.daily_usage WHERE usage_date = %s", (today,))
+            row = cur.fetchone()
+            if row and row[0] >= config.DAILY_MESSAGE_CAP:
+                return True
+            return False
+    finally:
+        conn.close()
+
+def increment_daily_usage():
+    """Increments the global daily message count in Supabase."""
+    today = date.today().isoformat()
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO public.daily_usage (usage_date, message_count) 
+                VALUES (%s, 1)
+                ON CONFLICT(usage_date) DO UPDATE SET message_count = public.daily_usage.message_count + 1
+                """,
+                (today,)
             )
-        """)
-        
-        # Rate limiter table for spam protection
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS rate_limiter (
-                chat_id TEXT,
-                timestamp REAL
-            )
-        """)
-        conn.commit()
+            conn.commit()
+    finally:
+        conn.close()
 
-def check_daily_cap(db_path=LOCAL_DB_PATH) -> bool:
-    """Returns True if the tenant's daily message cap has been exceeded, otherwise False."""
-    current_date = datetime.utcnow().strftime("%Y-%m-%d")
-    with get_local_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT count FROM daily_usage WHERE date = ?", (current_date,))
-        row = cursor.fetchone()
-        
-        if row and row["count"] >= config.DAILY_MESSAGE_CAP:
-            return True
-        return False
-
-def increment_daily_usage(db_path=LOCAL_DB_PATH):
-    """Increments the daily message count for the current date."""
-    current_date = datetime.utcnow().strftime("%Y-%m-%d")
-    with get_local_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO daily_usage (date, count) 
-            VALUES (?, 1)
-            ON CONFLICT(date) DO UPDATE SET count = count + 1
-        """, (current_date,))
-        conn.commit()
-
-def check_rate_limit(chat_id: str, db_path=LOCAL_DB_PATH) -> bool:
-    """Returns True if the user has exceeded their spam limit inside the rate window."""
+def check_rate_limit(chat_id: str) -> bool:
+    """In-memory rate limiter to protect the bot from spam (zero latency)."""
     now = time.time()
     cutoff = now - config.USER_RATE_WINDOW
     
-    with get_local_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM rate_limiter WHERE timestamp < ?", (cutoff,))
-        cursor.execute("SELECT COUNT(*) as count FROM rate_limiter WHERE chat_id = ?", (chat_id,))
-        count = cursor.fetchone()["count"]
+    # Filter out expired timestamps
+    timestamps = [ts for ts in _rate_limit_cache[chat_id] if ts > cutoff]
+    
+    if len(timestamps) >= config.USER_RATE_LIMIT:
+        return True
         
-        if count >= config.USER_RATE_LIMIT:
-            return True
-            
-        cursor.execute("INSERT INTO rate_limiter (chat_id, timestamp) VALUES (?, ?)", (chat_id, now))
-        conn.commit()
-        return False
+    timestamps.append(now)
+    _rate_limit_cache[chat_id] = timestamps
+    return False
 
 
 # =====================================================================
