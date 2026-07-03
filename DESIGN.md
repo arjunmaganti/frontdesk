@@ -332,3 +332,24 @@ To test the exact bundle that will go to production:
    sudo systemctl start frontdesk-haircuts
    ```
 
+---
+
+## 11. Visual Formatting, Interactive Buttons & Resolved Q&A Cache
+
+### A. Rich Visual Formatting & Cards
+To optimize presentation for text-based chat channels like Telegram:
+1. **HTML Parsing Mode**: The bot utilizes Telegram's HTML parse mode (`parse_mode="HTML"`) which allows clean styling. Raw markdown is parsed and cleaned using `format_for_telegram()`, translating bold (`**`), italic (`*`), code (` ` ` `), and headers into strict Telegram-compliant tags to avoid parse errors.
+2. **Short Message Cards**: Long LLM answers are broken down into short paragraph blocks (bubbles of less than 800 characters) and sent as separate cards to make readability high.
+3. **Progress Indicators**: When a visitor query is received, the bot immediately posts a temporary `🧠 Thinking...` message bubble. Once the response cards are ready, this message is updated/edited live with the first card, and subsequent cards are sent as new bubbles.
+
+### B. Interactive Action Buttons
+The bot dynamically injects interactive inline keyboard buttons at the bottom of messages based on context keywords:
+* **Capabilities Welcome Card**: When the visitor calls `/start`, they get a friendly greeting showing the dynamic `BUSINESS_NAME` and `AGENT_NAME`, and presenting Call Us and View Map buttons immediately.
+* **Contextual Buttons**: If the bot's response mentions contact information or phone numbers, it attaches a `📞 Call Us Now` button linking to `tel:<BUSINESS_PHONE>`. If it mentions location, directions, or Saratoga Ave, it attaches a `📍 View Map` button linking to `MAP_URL`.
+
+### C. Persistent Resolved Q&A Cache
+To prevent staff from being repeatedly disrupted by the same unanswerable questions:
+1. **Escalation Capturing**: When a visitor is in an active handoff (AI is paused), the bot saves their latest unanswered query as a `pending_question` in the SQLite database `state.db`.
+2. **Q&A Recording**: The first reply the Admin sends to this visitor is captured as the resolved answer and stored alongside the question in the `escalations_cache` table.
+3. **Fuzzy Retrieval**: Future incoming messages are fuzzy-matched against this cache using `difflib.SequenceMatcher` (threshold > 0.85). On a hit, the bot replies instantly using the staff's previously recorded answer and bypasses the LLM entirely.
+

@@ -168,3 +168,36 @@ sequenceDiagram
     Bot->>Admin: "Chat session resolved."
 ```
 
+---
+
+## 6. Advanced Features: Cache, Buttons & Formatting
+
+### A. Environment Configuration Settings
+To enable the interactive formatting, cards, buttons, and resolved Q&A cache features, make sure your `.env` configuration file contains:
+```env
+# Salon Metadata
+BUSINESS_NAME="DM Hair Care"
+AGENT_NAME="Kim"
+
+# Interactive Call & Location Maps
+BUSINESS_PHONE="+14082105851"
+BUSINESS_ADDRESS="1420 Saratoga Ave, San Jose, CA 95129"
+MAP_URL="https://www.google.com/maps/search/?api=1&query=1420+Saratoga+Ave,+San+Jose,+CA+95129"
+```
+
+### B. Visual Presentation Cards & Formatting
+The bot formats all replies for maximum readability in messaging apps:
+1. **Telegram HTML Conversion**: Clean HTML (`<b>`, `<i>`, `<pre>`, `<code>`) is used for styling instead of raw markdown, preventing raw tag parse errors. Emojis are dynamically injected as bullet points (🔹) and visual headers.
+2. **Thinking... Status Indicator**: The bot posts a temporary `🧠 Thinking...` message bubble, editing it live as soon as the response is ready.
+3. **Card-Style Bubble Division**: Long responses are split at natural paragraph breaks into separate, consecutive message bubbles of under 800 characters, mimicking clean conversation cards.
+
+### C. Contextual Action Buttons
+The bot automatically attaches inline buttons under messages depending on context:
+* **Welcome Card**: Visitors sending `/start` are greeted by name and business, and receive immediate Call Us and View Map buttons.
+* **Smart Contact Buttons**: If the bot's response mentions contact numbers or locations, it automatically appends `📞 Call Us Now` and `📍 View Map` buttons at the bottom of the message card.
+
+### D. SQLite Resolved Q&A Cache
+If the staff resolves an escalated question, the bot dynamically caches the Q&A in `state.db`:
+* **Automatic Capture**: When a staff member sends their first message to a paused visitor chat, the bot records the visitor's `pending_question` and pairs it with the admin's reply.
+* **Fuzzy Database Lookup**: Before querying LangGraph, incoming messages are compared to this cache using fuzzy matching. On a match, the bot replies instantly with the cached answer, avoiding Gemini API costs and preventing staff from answering the same question twice!
+
