@@ -182,23 +182,24 @@ def init_workspace(init_dir, url=None):
     print(f"1. Open and fill in the API keys in: {env_target}")
     print(f"2. Verify or add policy documents (.md) inside: {init_dir}")
     print(f"3. Build and package the ZIP using:")
-    print(f"   python3 utility/build.py --src {init_dir} --out dist/deploy_{os.path.basename(init_dir)}.zip")
+    print(f"   python3 utility/build.py --src {init_dir}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Front Desk Bot Compiler & Packager")
     parser.add_argument("--init", help="Path to initialize a new client configuration directory")
     parser.add_argument("--url", help="Optional website URL to crawl and seed the workspace (use alongside --init)")
     parser.add_argument("--src", help="Path to the tenant's local directory containing .env and markdown files")
-    parser.add_argument("--out", help="Path to save the generated deployable ZIP file (e.g. dist/haircuts.zip)")
+    parser.add_argument("--out", help="Optional path to save the generated deployable ZIP file (defaults to <src>/deploy.zip)")
 
     args = parser.parse_args()
 
     if args.init:
         init_workspace(args.init, args.url)
-    elif args.src and args.out:
-        build_package(args.src, args.out)
+    elif args.src:
+        out_path = args.out if args.out else os.path.join(os.path.abspath(args.src), "deploy.zip")
+        build_package(args.src, out_path)
     else:
         parser.print_help()
-        print("\nError: Please provide either --init <path> to generate template files, OR both --src <path> and --out <path> to compile a package.")
+        print("\nError: Please provide either --init <path> to generate template files, OR --src <path> to compile a package.")
         sys.exit(1)
 

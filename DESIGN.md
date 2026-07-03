@@ -4,7 +4,7 @@ This document outlines the architecture, file structure, developer roles, and de
 
 This system is structured as a **Builder & Runtime Platform**:
 1. **The Codebase**: A generic Python application (`core/`) containing the bot runner, LangGraph agent, and search index query service.
-2. **The Builder**: A packaging script (`utility/build.py`) that compiles a business owner's local directory (containing their configuration and raw Markdown documentation) and generates a self-contained, deploy-ready ZIP file for their server.
+2. **The Builder**: A packaging script (`utility/build.py`) that compiles a business owner's local directory (containing their configuration and raw Markdown documentation) and generates a self-contained, deploy-ready ZIP file inside the workspace folder (defaults to `<src_dir>/deploy.zip`).
 
 ---
 
@@ -100,7 +100,7 @@ python3 utility/build.py --init /path/to/haircuts_workspace --url https://munjel
 If `WEBSITE_URL` is set in the client's `.env` file, the builder script will automatically crawl that URL and save pages directly into the workspace to refresh the Markdown files before compiling the index.
 Once the client config and documentation are populated, compile and bundle the bot:
 ```bash
-python3 utility/build.py --src /path/to/haircuts_workspace --out dist/deploy_haircuts.zip
+python3 utility/build.py --src /path/to/haircuts_workspace
 ```
 **Compiler Actions**:
 1. **Load Keys**: Loads environment variables from the client's local `/path/to/haircuts_workspace/.env` to authenticate with embedding APIs.

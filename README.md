@@ -56,9 +56,9 @@ When you run the build command, it will automatically crawl the website and upda
 ### Step 4: Build and Package
 Compile the client's documents and build the standalone ZIP deployment package:
 ```bash
-python3 utility/build.py --src /Users/username/desktop/haircuts_config/ --out dist/deploy_haircuts.zip
+python3 utility/build.py --src /Users/username/desktop/haircuts_config/ --out deploy.zip
 ```
-This writes the standalone, deploy-ready **`dist/deploy_haircuts.zip`** file.
+This writes the standalone, deploy-ready **`deploy.zip`** file.
 
 ---
 
