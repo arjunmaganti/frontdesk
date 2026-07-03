@@ -98,3 +98,51 @@ create table if not exists public.business_load (
     created_at timestamptz not null default now(),
     processed_at timestamptz
 );
+
+-- 10. Create Business Load Trigger Function (Staging Ingestion)
+create or replace function public.process_business_load_row()
+returns trigger as $$
+begin
+    if new.status = 'pending' then
+        -- A. Upsert into the main businesses table
+        insert into public.businesses (
+            business_id, 
+            business_name, 
+            agent_name, 
+            website_url, 
+            business_timezone, 
+            admin_chat_id
+        )
+        values (
+            new.business_id, 
+            new.business_name, 
+            new.agent_name, 
+            new.website_url, 
+            new.business_timezone, 
+            new.admin_chat_id
+        )
+        on conflict (business_id) do update set
+            business_name = excluded.business_name,
+            agent_name = excluded.agent_name,
+            website_url = excluded.website_url,
+            business_timezone = excluded.business_timezone,
+            admin_chat_id = coalesce(excluded.admin_chat_id, public.businesses.admin_chat_id);
+
+        -- B. Automatically queue a crawl job
+        insert into public.crawl_jobs (business_id, website_url, status)
+        values (new.business_id, new.website_url, 'pending');
+
+        -- C. Update the staging row status
+        new.status := 'completed';
+        new.processed_at := now();
+    end if;
+    return new;
+end;
+$$ language plpgsql;
+
+-- Bind trigger to run before insert on business_load
+drop trigger if exists trigger_process_business_load on public.business_load;
+create trigger trigger_process_business_load
+before insert on public.business_load
+for each row
+execute function public.process_business_load_row();
