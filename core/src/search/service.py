@@ -1,6 +1,6 @@
 import os
 from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenAIEmbeddings
 import core.src.config as config
 
 _local_db = None
@@ -13,8 +13,8 @@ def get_vector_store():
         if not os.path.exists(index_dir) or not os.listdir(index_dir):
             raise FileNotFoundError("Error: Compiled vector index files (index.faiss/index.pkl) not found in './index/'. Please run the builder first.")
         
-        # Load local FAISS index
-        embeddings = OpenAIEmbeddings(api_key=config.OPENAI_API_KEY)
+        # Load local FAISS index using Google GenAI Embeddings
+        embeddings = GoogleGenAIEmbeddings(model="models/embedding-001")
         _local_db = FAISS.load_local(index_dir, embeddings, allow_dangerous_deserialization=True)
     return _local_db
 

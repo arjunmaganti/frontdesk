@@ -38,4 +38,5 @@ __pycache__/
 *.db-journal
 .env
 test_workspace/
+munjelaglow/
 

@@ -19,7 +19,7 @@ def compile_index(src_dir, temp_index_dir):
         from langchain_community.document_loaders import DirectoryLoader, TextLoader
         from langchain_text_splitters import RecursiveCharacterTextSplitter
         from langchain_community.vectorstores import FAISS
-        from langchain_openai import OpenAIEmbeddings
+        from langchain_google_genai import GoogleGenAIEmbeddings
     except ImportError:
         print("Error: Required libraries not installed. Please run: pip install -r requirements.txt")
         sys.exit(1)
@@ -37,7 +37,7 @@ def compile_index(src_dir, temp_index_dir):
     print(f"Generated {len(chunks)} text chunks.")
 
     print("Generating vector embeddings and building FAISS index...")
-    embeddings = OpenAIEmbeddings()
+    embeddings = GoogleGenAIEmbeddings(model="models/embedding-001")
     db = FAISS.from_documents(chunks, embeddings)
     
     os.makedirs(temp_index_dir, exist_ok=True)
@@ -70,8 +70,11 @@ def build_package(src_dir, out_zip):
         sys.exit(1)
     
     load_dotenv(src_env)
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY is not set in the source directory's .env file.")
+    gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if gemini_key:
+        os.environ["GOOGLE_API_KEY"] = gemini_key
+    if not os.environ.get("GOOGLE_API_KEY"):
+        print("Error: GEMINI_API_KEY (or GOOGLE_API_KEY) is not set in the source directory's .env file.")
         sys.exit(1)
 
     # 2. Create a temporary folder to assemble the deployable bundle

@@ -8,9 +8,12 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
 
-# LLM Config
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gpt-4o-mini")
+# LLM Config (Gemini API uses GOOGLE_API_KEY internally)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+if GEMINI_API_KEY:
+    os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
+
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gemini-1.5-flash")
 
 # Guardrails & Limits
 DAILY_MESSAGE_CAP = int(os.getenv("DAILY_MESSAGE_CAP", "200"))
@@ -23,5 +26,5 @@ def validate_config():
         raise ValueError("Config Error: TELEGRAM_BOT_TOKEN must be set in .env")
     if not ADMIN_CHAT_ID:
         raise ValueError("Config Error: ADMIN_CHAT_ID must be set in .env")
-    if not OPENAI_API_KEY:
-        raise ValueError("Config Error: OPENAI_API_KEY must be set in .env")
+    if not os.environ.get("GOOGLE_API_KEY"):
+        raise ValueError("Config Error: GEMINI_API_KEY (or GOOGLE_API_KEY) must be set in .env")
