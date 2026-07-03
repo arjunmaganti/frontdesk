@@ -6,54 +6,145 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 import src.config as config
 import src.telegram_bot.session as session
 from src.agent.orchestrator import agent_app
+from src.db import get_pg_connection
 
 # Enable logging
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Greets the user and explains the bot's purpose."""
+    """Greets the user and handles visitor and admin deep links."""
     chat_id = str(update.effective_chat.id)
+    args = context.args
     
-    if chat_id == str(config.ADMIN_CHAT_ID):
-        await update.message.reply_text(
-            "👋 Hello Admin! You are logged into the Front Desk Bot control panel.\n\n"
-            "Whenever a visitor triggers an escalation, you will receive an alert here with buttons to reply directly."
-        )
-    else:
-        # Determine the time of day dynamically
-        from datetime import datetime
-        hour = datetime.now().hour
-        if hour < 12:
-            time_of_day = "morning"
-        elif hour < 17:
-            time_of_day = "afternoon"
+    # 1. Handle Admin Deep Link Activation
+    if args and args[0].startswith("a_"):
+        business_id = args[0].replace("a_", "")
+        biz_name = session.bind_business_admin(business_id, chat_id)
+        if biz_name:
+            await update.message.reply_text(
+                f"✅ <b>Activation Complete!</b>\n\n"
+                f"Greetings! You are now successfully connected as the Admin of <b>{biz_name}</b>.\n"
+                f"You will receive customer alerts and direct escalations here.",
+                parse_mode="HTML"
+            )
         else:
-            time_of_day = "evening"
-            
-        agent_name = getattr(config, "AGENT_NAME", "Frontdesk")
-        business_name = getattr(config, "BUSINESS_NAME", "our business")
+            await update.message.reply_text(
+                f"⚠️ <b>Onboarding Error</b>\n\n"
+                f"Business ID <code>{business_id}</code> was not found in the database.\n"
+                f"Please ensure the business has been uploaded to the staging tables first.",
+                parse_mode="HTML"
+            )
+        return
+
+    # 2. Handle Visitor Deep Link Routing
+    if args and args[0].startswith("v_"):
+        business_id = args[0].replace("v_", "")
+        session.set_visitor_business(chat_id, business_id)
         
-        welcome_text = (
-            f"👋 Good {time_of_day}! Welcome to <b>{business_name}</b>.\n\n"
-            f"I am <b>{agent_name}</b>, your friendly virtual concierge. I am here to make your visit smooth and answer any questions you might have!\n\n"
-            f"Here is what I can do for you:\n"
-            f"🔹 Answer questions about our services and policies\n"
-            f"🔹 Provide location and contact details\n"
-            f"🔹 Instantly connect you to our staff if you need direct help\n\n"
-            f"How can I assist you today? 😊"
+    # Check if the visitor is linked to any business
+    business_id = session.get_visitor_business(chat_id)
+    
+    # Retrieve business configurations
+    biz_config = session.get_business_config(business_id) if business_id else None
+    
+    # If not a visitor, check if they are a registered admin of a business
+    if not biz_config:
+        admin_biz = session.get_business_by_admin(chat_id)
+        if admin_biz:
+            await update.message.reply_text(
+                f"👋 Hello Admin! You are logged into the Front Desk control panel for <b>{admin_biz['business_name']}</b>.\n\n"
+                f"Whenever a customer triggers an escalation, you will receive an alert here with buttons to reply directly.",
+                parse_mode="HTML"
+            )
+            return
+            
+        # Default fallback if no business link exists
+        await update.message.reply_text(
+            "👋 Welcome to Frontdesk!\n\n"
+            "To get started, please click the custom chat link provided by the business you're visiting.",
+            parse_mode="HTML"
         )
+        return
+
+    # Retrieve tenant-specific variables
+    agent_name = biz_config.get("agent_name") or "Kim"
+    business_name = biz_config.get("business_name") or "our business"
+    website_url = biz_config.get("website_url")
+    map_url = biz_config.get("map_url")
+    timezone_str = biz_config.get("business_timezone") or "America/Los_Angeles"
+
+    # Evaluate dynamic greeting based on timezone local time
+    from zoneinfo import ZoneInfo
+    from datetime import datetime
+    try:
+        tz = ZoneInfo(timezone_str)
+    except Exception:
+        tz = ZoneInfo("America/Los_Angeles")
         
-        # Setup welcome markup with website and map buttons
-        welcome_buttons = []
-        website_url = getattr(config, "WEBSITE_URL", "")
-        if website_url:
-            welcome_buttons.append(InlineKeyboardButton("🌐 Visit Website", url=website_url))
-        if getattr(config, "MAP_URL", ""):
-            welcome_buttons.append(InlineKeyboardButton("📍 View Map", url=config.MAP_URL))
-            
-        welcome_markup = InlineKeyboardMarkup([welcome_buttons]) if welcome_buttons else None
-        await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=welcome_markup)
+    hour = datetime.now(tz).hour
+    if hour < 12:
+        time_of_day = "morning"
+    elif hour < 17:
+        time_of_day = "afternoon"
+    else:
+        time_of_day = "evening"
+
+    welcome_text = (
+        f"👋 Good {time_of_day}! Welcome to <b>{business_name}</b>.\n\n"
+        f"I am <b>{agent_name}</b>, your friendly virtual concierge. I am here to make your visit smooth and answer any questions you might have!\n\n"
+        f"Here is what I can do for you:\n"
+        f"🔹 Answer questions about our services and policies\n"
+        f"🔹 Provide location and contact details\n"
+        f"🔹 Instantly connect you to our staff if you need direct help\n\n"
+        f"How can I assist you today? 😊"
+    )
+
+    # Setup welcome markup buttons using the business configs
+    welcome_buttons = []
+    if website_url:
+        welcome_buttons.append(InlineKeyboardButton("🌐 Visit Website", url=website_url))
+    if map_url:
+        welcome_buttons.append(InlineKeyboardButton("📍 View Map", url=map_url))
+
+    welcome_markup = InlineKeyboardMarkup([welcome_buttons]) if welcome_buttons else None
+    await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=welcome_markup)
+
+async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays the admin settings panel for the registered business owner."""
+    chat_id = str(update.effective_chat.id)
+    admin_biz = session.get_business_by_admin(chat_id)
+    
+    if not admin_biz:
+        await update.message.reply_text(
+            "⚠️ <b>Settings Access Denied</b>\n\n"
+            "You are not registered as an admin for any business on this platform.\n"
+            "Please use your custom activation link to connect your Telegram account first.",
+            parse_mode="HTML"
+        )
+        return
+        
+    business_id = admin_biz["business_id"]
+    biz_config = session.get_business_config(business_id)
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("🔄 Recrawl Website", callback_data=f"settings_recrawl_{business_id}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        f"⚙️ <b>Settings Dashboard: {biz_config['business_name']}</b>\n\n"
+        f"👤 <b>AI Assistant Name:</b> {biz_config['agent_name']}\n"
+        f"🌐 <b>Website URL:</b> {biz_config['website_url']}\n"
+        f"📍 <b>Phone:</b> {biz_config.get('business_phone') or 'Not Extracted'}\n"
+        f"🗺️ <b>Address:</b> {biz_config.get('business_address') or 'Not Extracted'}\n"
+        f"🌍 <b>Timezone:</b> <code>{biz_config['business_timezone']}</code>\n\n"
+        f"Select an option below to manage your virtual front desk:",
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processes button clicks from the admin."""
@@ -63,16 +154,48 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     data = query.data
     chat_id = str(update.effective_chat.id)
     
-    # Verify only the admin can click buttons
-    if chat_id != str(config.ADMIN_CHAT_ID):
+    # 1. Handle Settings Recrawl Option
+    if data.startswith("settings_recrawl_"):
+        business_id = data.replace("settings_recrawl_", "")
+        
+        # Verify the requester is actually the admin for this business
+        biz_config = session.get_business_config(business_id)
+        if not biz_config or biz_config["admin_chat_id"] != chat_id:
+            return
+            
+        # Queue the job in crawl_jobs
+        conn = get_pg_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO public.crawl_jobs (business_id, website_url, status) VALUES (%s, %s, 'pending')",
+                    (business_id, biz_config["website_url"])
+                )
+                conn.commit()
+        finally:
+            conn.close()
+            
+        await query.edit_message_text(
+            text=f"🔄 <b>Crawl Task Queued!</b>\n\n"
+                 f"The background scraper has been notified to scan <code>{biz_config['website_url']}</code> "
+                 f"and update the search database for <b>{biz_config['business_name']}</b>.\n\n"
+                 f"You will receive an alert here when the compilation is complete!",
+            parse_mode="HTML"
+        )
         return
+
+    # Verify the sender is the registered admin for a business
+    admin_biz = session.get_business_by_admin(chat_id)
+    if not admin_biz:
+        return
+    business_id = admin_biz["business_id"]
 
     if data.startswith("reply_to_"):
         visitor_chat_id = data.replace("reply_to_", "")
         
         # Enable direct reply mode for the admin
-        session.set_active_visitor(visitor_chat_id)
-        session.set_visitor_paused(visitor_chat_id, True)
+        session.set_active_visitor_for_admin(business_id, visitor_chat_id)
+        session.set_visitor_paused(visitor_chat_id, True, business_id)
         
         await query.edit_message_text(
             text=f"💬 **Connected to Visitor ({visitor_chat_id})**\n\n"
@@ -87,8 +210,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         visitor_chat_id = data.replace("resolve_chat_", "")
         
         # Reactivate AI and clear routing state
-        session.set_visitor_paused(visitor_chat_id, False)
-        session.clear_active_visitor()
+        session.set_visitor_paused(visitor_chat_id, False, business_id)
+        session.clear_active_visitor_for_admin(business_id)
         
         await query.edit_message_text(text="✅ **Chat Resolved.** AI assistant is back online for this visitor.")
         
@@ -128,11 +251,7 @@ def format_for_telegram(text: str) -> list[str]:
     # 3. Beautify headers with anchors and visual dividers
     text = re.sub(r"^#+\s+(.*?)$", r"\n<b>📍 \1</b>\n━━━━━━━━━━━━━━━━━━━━", text, flags=re.MULTILINE)
     
-    # 4. Convert lists (+, -, *) to custom emoji bullets
-    text = re.sub(r"^\s*[\*\-\+]\s+", "🔹 ", text, flags=re.MULTILINE)
-    
-    # 5. Split into separate message cards if there are large text blocks (e.g. double newlines)
-    # This keeps paragraph bubbles short and neat!
+    # 4. Segment into message bubbles (< 800 chars)
     raw_blocks = text.split("\n\n")
     cards = []
     current_card = []
@@ -163,16 +282,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     user_message = update.message.text
 
-    # CASE 1: Message is from the Admin/Owner
-    if chat_id == str(config.ADMIN_CHAT_ID):
+    # CASE 1: Message is from the Admin/Owner of a registered business
+    admin_biz = session.get_business_by_admin(chat_id)
+    if admin_biz:
+        business_id = admin_biz["business_id"]
         # Check who the admin is currently replying to
-        active_visitor_id = session.get_active_visitor()
+        active_visitor_id = session.get_active_visitor_for_admin(chat_id)
         
         if active_visitor_id:
             # If the admin types /resolve, close it immediately
             if user_message.strip() == "/resolve":
-                session.set_visitor_paused(active_visitor_id, False)
-                session.clear_active_visitor()
+                session.set_visitor_paused(active_visitor_id, False, business_id)
+                session.clear_active_visitor_for_admin(business_id)
                 await update.message.reply_text("✅ Chat resolved. AI bot reactivated.")
                 await context.bot.send_message(
                     chat_id=active_visitor_id,
@@ -184,8 +305,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Capture this message as the answer to the pending question before relaying!
             pending_question = session.get_pending_question(active_visitor_id)
             if pending_question:
-                session.save_resolved_qa(pending_question, user_message)
-                session.save_pending_question(active_visitor_id, None) # Clear pending
+                session.save_resolved_qa(business_id, pending_question, user_message)
+                session.save_pending_question(active_visitor_id, None, business_id) # Clear pending
                 
             # Relay the admin's message directly to the visitor
             try:
@@ -208,14 +329,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # CASE 2: Message is from a Visitor
     logger.info(f"📥 [Incoming Visitor Message] Chat ID: {chat_id} | Message: \"{user_message}\"")
     
+    # Check if the visitor has a linked business context
+    business_id = session.get_visitor_business(chat_id)
+    if not business_id:
+        await update.message.reply_text(
+            "👋 Welcome to Frontdesk!\n\n"
+            "To get started, please click the custom chat link provided by the business you're visiting.",
+            parse_mode="HTML"
+        )
+        return
+
+    biz_config = session.get_business_config(business_id)
+    if not biz_config:
+        await update.message.reply_text(
+            "⚠️ <b>Service Configuration Error</b>\n\n"
+            "We couldn't load settings for this business. Please contact their staff directly.",
+            parse_mode="HTML"
+        )
+        return
+
     # A. Check if the AI session is paused (Handoff is active and owner has control)
     if session.is_visitor_paused(chat_id):
-        # We silently ignore or log the message so the AI doesn't double-reply
         logger.info(f"Visitor {chat_id} messaged, but AI is paused. Waiting for admin.")
         return
 
     # Check if we have a cached answer from a previous resolved escalation!
-    cached_answer = session.find_cached_answer(user_message)
+    cached_answer = session.find_cached_answer(business_id, user_message)
     if cached_answer:
         logger.info(f"⚡ [Cache Hit] Found resolved answer for: \"{user_message}\"")
         
@@ -244,11 +383,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Determine if we should append buttons based on content keywords
         buttons = []
         response_lower = cached_answer.lower()
-        website_url = getattr(config, "WEBSITE_URL", "")
+        website_url = biz_config.get("website_url", "")
         if website_url and any(kw in response_lower for kw in ["phone", "call", "tel", "contact", "reach us", "number", "website", "email"]):
             buttons.append(InlineKeyboardButton("🌐 Visit Website", url=website_url))
-        if getattr(config, "MAP_URL", "") and any(kw in response_lower for kw in ["location", "located", "address", "find us", "where", "saratoga", "map"]):
-            buttons.append(InlineKeyboardButton("📍 View Map", url=config.MAP_URL))
+        map_url = biz_config.get("map_url", "")
+        if map_url and any(kw in response_lower for kw in ["location", "located", "address", "find us", "where", "saratoga", "map"]):
+            buttons.append(InlineKeyboardButton("📍 View Map", url=map_url))
         markup = InlineKeyboardMarkup([buttons]) if buttons else None
 
         # Edit the "Thinking..." status message with the first card
@@ -294,7 +434,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # D. Call the LangGraph Orchestrator
     try:
-        config_run = {"configurable": {"thread_id": chat_id, "tenant_id": "standalone"}}
+        config_run = {"configurable": {"thread_id": chat_id, "tenant_id": business_id}}
         result = await agent_app.ainvoke(
             {"messages": [("user", user_message)]},
             config=config_run
@@ -314,10 +454,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if intent == "handoff" or is_fallback:
             # 1. Pause the AI
-            session.set_visitor_paused(chat_id, True)
+            session.set_visitor_paused(chat_id, True, business_id)
             
             # Save the pending question for caching when resolved
-            session.save_pending_question(chat_id, user_message)
+            session.save_pending_question(chat_id, user_message, business_id)
             
             # 2. Alert the Admin with inline buttons
             keyboard = [
@@ -328,15 +468,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await context.bot.send_message(
-                chat_id=config.ADMIN_CHAT_ID,
-                text=f"🚨 <b>Handoff Escalation Triggered!</b>\n\n"
-                     f"👤 <b>Visitor Chat ID:</b> <code>{chat_id}</code>\n"
-                     f"💬 <b>Visitor Message:</b> \"{user_message}\"\n\n"
-                     f"AI bot has been muted. Choose an option below:",
-                reply_markup=reply_markup,
-                parse_mode="HTML"
-            )
+            admin_chat_id = biz_config.get("admin_chat_id")
+            if admin_chat_id:
+                await context.bot.send_message(
+                    chat_id=admin_chat_id,
+                    text=f"🚨 <b>Handoff Escalation Triggered!</b>\n\n"
+                         f"🏢 <b>Business:</b> <b>{biz_config['business_name']}</b>\n"
+                         f"👤 <b>Visitor Chat ID:</b> <code>{chat_id}</code>\n"
+                         f"💬 <b>Visitor Message:</b> \"{user_message}\"\n\n"
+                         f"AI bot has been muted. Choose an option below:",
+                    reply_markup=reply_markup,
+                    parse_mode="HTML"
+                )
+            else:
+                logger.warning(f"⚠️ Handoff triggered for {biz_config['business_name']}, but no admin is registered for this business.")
             
         # Parse and format response into HTML cards
         cards = format_for_telegram(final_response)
@@ -348,13 +493,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response_lower = final_response.lower()
         
         # Website button if response mentions contact/phone/call/tel/email
-        website_url = getattr(config, "WEBSITE_URL", "")
+        website_url = biz_config.get("website_url", "")
         if website_url and any(kw in response_lower for kw in ["phone", "call", "tel", "contact", "reach us", "number", "website", "email"]):
             buttons.append(InlineKeyboardButton("🌐 Visit Website", url=website_url))
             
         # Map button if config has map URL and response mentions location/map/address
-        if getattr(config, "MAP_URL", "") and any(kw in response_lower for kw in ["location", "located", "address", "find us", "where", "saratoga", "map"]):
-            buttons.append(InlineKeyboardButton("📍 View Map", url=config.MAP_URL))
+        map_url = biz_config.get("map_url", "")
+        if map_url and any(kw in response_lower for kw in ["location", "located", "address", "find us", "where", "saratoga", "map"]):
+            buttons.append(InlineKeyboardButton("📍 View Map", url=map_url))
             
         markup = InlineKeyboardMarkup([buttons]) if buttons else None
         
@@ -393,13 +539,14 @@ def build_bot_app():
     # Ensure config variables are set
     config.validate_config()
     
-    # Initialize SQLite database
+    # Initialize local SQLite database
     session.init_db()
     
     app = ApplicationBuilder().token(config.TELEGRAM_BOT_TOKEN).build()
     
     # Add Command & Message handlers
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("settings", settings_command))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
