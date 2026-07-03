@@ -2,9 +2,9 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-import core.src.config as config
-import core.src.telegram_bot.session as session
-from core.src.agent.orchestrator import agent_app
+import src.config as config
+import src.telegram_bot.session as session
+from src.agent.orchestrator import agent_app
 
 # Enable logging
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)

@@ -1,6 +1,6 @@
 import sys
 import logging
-from core.src.telegram_bot.bot import build_bot_app
+from src.telegram_bot.bot import build_bot_app
 
 # Enable logging
 logging.basicConfig(

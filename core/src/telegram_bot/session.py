@@ -1,7 +1,7 @@
 import sqlite3
 import time
 from datetime import datetime
-import core.src.config as config
+import src.config as config
 
 DB_PATH = "state.db"
 

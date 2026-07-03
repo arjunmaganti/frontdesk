@@ -4,10 +4,10 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-import core.src.config as config
-from core.src.agent.state import AgentState
-import core.src.agent.prompt as prompts
-from core.src.search.service import query_knowledge_base
+import src.config as config
+from src.agent.state import AgentState
+import src.agent.prompt as prompts
+from src.search.service import query_knowledge_base
 
 def get_llm(temperature=0.0):
     """Returns a ChatGoogleGenerativeAI model instance configured with the tenant's model name."""

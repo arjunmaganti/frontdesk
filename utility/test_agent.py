@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 # Ensure core directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../core")))
 
 def setup_test_environment(src_dir):
     """Sets up the local environment to simulate running the bot for a specific client."""
@@ -45,9 +46,9 @@ def setup_test_environment(src_dir):
 
 async def run_simulation_loop():
     """Runs a simulated chat loop in the terminal."""
-    import core.src.config as config
-    import core.src.telegram_bot.session as session
-    from core.src.agent.orchestrator import agent_app
+    import src.config as config
+    import src.telegram_bot.session as session
+    from src.agent.orchestrator import agent_app
     
     # 1. Initialize test database
     session.init_db()

@@ -1,7 +1,7 @@
 import os
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-import core.src.config as config
+import src.config as config
 
 _local_db = None
 
