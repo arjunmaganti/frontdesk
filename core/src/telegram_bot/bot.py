@@ -21,10 +21,28 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Whenever a visitor triggers an escalation, you will receive an alert here with buttons to reply directly."
         )
     else:
-        await update.message.reply_text(
-            "👋 Welcome! I am the automated Front Desk Assistant.\n\n"
-            "How can I help you today? (e.g., Ask me about check-in rules, parking, or Wi-Fi)."
+        # Determine the time of day dynamically
+        from datetime import datetime
+        hour = datetime.now().hour
+        if hour < 12:
+            time_of_day = "morning"
+        elif hour < 17:
+            time_of_day = "afternoon"
+        else:
+            time_of_day = "evening"
+            
+        agent_name = getattr(config, "AGENT_NAME", "Frontdesk")
+        business_name = getattr(config, "BUSINESS_NAME", "our business")
+        
+        welcome_text = (
+            f"👋 Good {time_of_day}! Welcome to <b>{business_name}</b>.\n\n"
+            f"I am <b>{agent_name}</b>, your virtual concierge. Here is what I can help you with:\n\n"
+            f"🔹 Answer questions about our services and policies\n"
+            f"🔹 Provide contact info and booking details\n"
+            f"🔹 Escalate and connect you to our staff if you need direct help\n\n"
+            f"What can I assist you with today? 😊"
         )
+        await update.message.reply_text(welcome_text, parse_mode="HTML")
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processes button clicks from the admin."""

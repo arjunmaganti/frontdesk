@@ -15,6 +15,7 @@ if GEMINI_API_KEY:
 
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gemini-1.5-flash")
 BUSINESS_NAME = os.getenv("BUSINESS_NAME", "our business")
+AGENT_NAME = os.getenv("AGENT_NAME", "Frontdesk")
 
 # Guardrails & Limits
 DAILY_MESSAGE_CAP = int(os.getenv("DAILY_MESSAGE_CAP", "200"))

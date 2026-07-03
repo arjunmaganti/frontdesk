@@ -58,10 +58,13 @@ def casual_reply_node(state: AgentState) -> dict:
         
     business_name = getattr(config, "BUSINESS_NAME", "our business")
     
+    agent_name = getattr(config, "AGENT_NAME", "Frontdesk")
+    
     # Format the dynamic system prompt
     formatted_system_prompt = prompts.CHITCHAT_PROMPT.format(
         business_name=business_name,
-        time_of_day=time_of_day
+        time_of_day=time_of_day,
+        agent_name=agent_name
     )
     
     # We combine the system prompt with the messages history
