@@ -1,4 +1,5 @@
 import logging
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
@@ -72,6 +73,62 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception as e:
             logger.error(f"Failed to send resolve message to visitor: {e}")
 
+def format_for_telegram(text: str) -> list[str]:
+    """Converts standard Markdown formatting into clean Telegram HTML and splits into visual 'cards' if too long."""
+    if not text:
+        return [""]
+        
+    # 1. Escape basic HTML tags to avoid parser failures (since Telegram parse_mode='HTML' is very strict)
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    
+    # 2. Re-enable allowed HTML tags for formatting
+    # Convert bold **text** or __text__ -> <b>text</b>
+    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"__(.*?)__", r"<b>\1</b>", text)
+    
+    # Convert italic *text* or _text_ -> <i>text</i>
+    text = re.sub(r"\*(.*?)\*", r"<i>\1</i>", text)
+    text = re.sub(r"_(.*?)_", r"<i>\1</i>", text)
+    
+    # Convert code blocks ```...``` -> <pre>...</pre>
+    text = re.sub(r"```(?:[a-zA-Z]+)?\n?(.*?)\n?```", r"<pre>\1</pre>", text, flags=re.DOTALL)
+    
+    # Convert inline code `code` -> <code>code</code>
+    text = re.sub(r"`(.*?)`", r"<code>\1</code>", text)
+    
+    # 3. Beautify headers with anchors and visual dividers
+    text = re.sub(r"^#+\s+(.*?)$", r"\n<b>📍 \1</b>\n━━━━━━━━━━━━━━━━━━━━", text, flags=re.MULTILINE)
+    
+    # 4. Convert lists (+, -, *) to custom emoji bullets
+    text = re.sub(r"^\s*[\*\-\+]\s+", "🔹 ", text, flags=re.MULTILINE)
+    
+    # 5. Split into separate message cards if there are large text blocks (e.g. double newlines)
+    # This keeps paragraph bubbles short and neat!
+    raw_blocks = text.split("\n\n")
+    cards = []
+    current_card = []
+    current_length = 0
+    
+    for block in raw_blocks:
+        block_stripped = block.strip()
+        if not block_stripped:
+            continue
+        
+        # If adding this block exceeds 800 characters, make it a new card/message
+        if current_length + len(block_stripped) > 800 or "━━━━━━━━━━━━━━━━━━━━" in block_stripped:
+            if current_card:
+                cards.append("\n\n".join(current_card))
+                current_card = []
+                current_length = 0
+        
+        current_card.append(block_stripped)
+        current_length += len(block_stripped) + 2
+        
+    if current_card:
+        cards.append("\n\n".join(current_card))
+        
+    return [c for c in cards if c]
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles incoming text messages from visitors and the admin."""
     chat_id = str(update.effective_chat.id)
@@ -138,6 +195,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Increment usage count
     session.increment_daily_usage()
 
+    # Post initial "Thinking..." status card
+    status_msg = await update.message.reply_text("🧠 <i>Thinking...</i>", parse_mode="HTML")
+
     # D. Call the LangGraph Orchestrator
     try:
         config_run = {"configurable": {"thread_id": chat_id, "tenant_id": "standalone"}}
@@ -177,13 +237,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
             
-        # Send reply back to the visitor
+        # Parse and format response into HTML cards
+        cards = format_for_telegram(final_response)
+        
         logger.info(f"📤 [Outgoing Bot Response] Chat ID: {chat_id} | Intent: {intent} | Response: \"{final_response}\"")
-        await update.message.reply_text(final_response)
+        
+        # Edit the "Thinking..." status message with the first card
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg.message_id,
+            text=cards[0],
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+        
+        # Send subsequent cards as new message bubbles
+        for card in cards[1:]:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=card,
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
 
     except Exception as e:
         logger.error(f"Error executing agent app: {e}")
-        await update.message.reply_text("I apologize, but I encountered an error. Please try again in a moment.")
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg.message_id,
+            text="⚠️ <i>I apologize, but I encountered an error. Please try again in a moment.</i>",
+            parse_mode="HTML"
+        )
 
 def build_bot_app():
     """Initializes the python-telegram-bot application."""
