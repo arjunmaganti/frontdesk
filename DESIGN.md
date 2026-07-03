@@ -104,13 +104,14 @@ python3 utility/build.py --src /path/to/haircuts_workspace
 ```
 **Compiler Actions**:
 1. **Load Keys**: Loads environment variables from the client's local `/path/to/haircuts_workspace/.env` to authenticate with embedding APIs.
-2. **Compile Vector Index**: Reads all `.md` files in the client directory, generates semantic vector embeddings, and compiles them.
-3. **Assemble Standalone Package**: Creates a temporary staging folder and copies:
+2. **Automated Coordinates Sync**: Parses crawled markdown files and runs Gemini LLM to extract `BUSINESS_PHONE` and `BUSINESS_ADDRESS`, generating the Google Maps `MAP_URL` and writing them directly back into the workspace's `.env` file.
+3. **Compile Vector Index**: Reads all `.md` files in the client directory, generates semantic vector embeddings, and compiles them.
+4. **Assemble Standalone Package**: Creates a temporary staging folder and copies:
    * The core bot engine files (`core/main.py` and `core/src/` placed flat at root).
    * The `requirements.txt`.
    * The client's specific `.env` file.
    * The compiled FAISS files placed inside an `index/` directory.
-4. **Generate ZIP**: Compresses the staging directory into the output ZIP file, leaving out all developer scripts and raw Markdown documents.
+5. **Generate ZIP**: Compresses the staging directory into the output ZIP file, leaving out all developer scripts and raw Markdown documents.
 
 ### C. Auto-Generating Data from a Website (`utility/crawl.py`)
 If the business already has an existing public website, developers can auto-generate the markdown files by running the crawler:
@@ -342,10 +343,11 @@ To optimize presentation for text-based chat channels like Telegram:
 2. **Short Message Cards**: Long LLM answers are broken down into short paragraph blocks (bubbles of less than 800 characters) and sent as separate cards to make readability high.
 3. **Progress Indicators**: When a visitor query is received, the bot immediately posts a temporary `🧠 Thinking...` message bubble. Once the response cards are ready, this message is updated/edited live with the first card, and subsequent cards are sent as new bubbles.
 
-### B. Interactive Action Buttons
+### B. Interactive Action Buttons & Timezone Support
 The bot dynamically injects interactive inline keyboard buttons at the bottom of messages based on context keywords:
-* **Capabilities Welcome Card**: When the visitor calls `/start`, they get a friendly greeting showing the dynamic `BUSINESS_NAME` and `AGENT_NAME`, and presenting Call Us and View Map buttons immediately.
-* **Contextual Buttons**: If the bot's response mentions contact information or phone numbers, it attaches a `📞 Call Us Now` button linking to `tel:<BUSINESS_PHONE>`. If it mentions location, directions, or Saratoga Ave, it attaches a `📍 View Map` button linking to `MAP_URL`.
+* **Capabilities Welcome Card**: When the visitor calls `/start`, they get a friendly greeting showing the dynamic `BUSINESS_NAME` and `AGENT_NAME`, presenting a `🌐 Visit Website` and `📍 View Map` button immediately.
+* **Contextual Buttons**: If the bot's response mentions contact information, websites, or emails, it attaches a `🌐 Visit Website` button linking to `WEBSITE_URL`. If it mentions location, directions, or Saratoga Ave, it attaches a `📍 View Map` button linking to `MAP_URL`. (Note: Raw `tel:` schema links are omitted as they are unsupported in Telegram inline keyboards; phone numbers are instead styled as clickable inline text links).
+* **Timezone-Aware Schedule Reasoning**: The bot reads `BUSINESS_TIMEZONE` from `.env` to evaluate opening status. The current day and time at the business location are injected dynamically into the RAG responder prompt so the LLM can answer questions like "Are you open now?" without triggering unnecessary escalations.
 
 ### C. Persistent Resolved Q&A Cache
 To prevent staff from being repeatedly disrupted by the same unanswerable questions:
