@@ -101,8 +101,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=active_visitor_id,
                     text=f"✉️ **Front Desk Staff:**\n{user_message}"
                 )
+                logger.info(f"🔄 [Admin Relay] Relayed message from Admin ({chat_id}) to Visitor ({active_visitor_id}): \"{user_message}\"")
                 await update.message.reply_text(f"🚀 Relayed message to visitor.")
             except Exception as e:
+                logger.error(f"❌ Failed to relay message to visitor {active_visitor_id}: {e}")
                 await update.message.reply_text(f"❌ Failed to relay message: {e}")
         else:
             await update.message.reply_text(
@@ -112,6 +114,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # CASE 2: Message is from a Visitor
+    logger.info(f"📥 [Incoming Visitor Message] Chat ID: {chat_id} | Message: \"{user_message}\"")
     
     # A. Check if the AI session is paused (Handoff is active and owner has control)
     if session.is_visitor_paused(chat_id):
@@ -175,6 +178,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
         # Send reply back to the visitor
+        logger.info(f"📤 [Outgoing Bot Response] Chat ID: {chat_id} | Intent: {intent} | Response: \"{final_response}\"")
         await update.message.reply_text(final_response)
 
     except Exception as e:
