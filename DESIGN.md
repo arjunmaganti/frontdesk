@@ -143,7 +143,66 @@ deploy_haircuts/
 
 ---
 
-## 5. Cost Protection & Spam Guardrails
+## 5. Agent State Machine & Handoff Flow
+
+The bot uses LangGraph to orchestrate a deterministic agent state machine. The orchestrator classifies the visitor's intent and routes them dynamically:
+
+### A. State Diagram (Mermaid)
+
+```mermaid
+graph TD
+    START([Start]) --> CLASSIFIER[Intent Classifier Node]
+    CLASSIFIER --> ROUTER{Route by Intent}
+    
+    ROUTER -->|chitchat| CHITCHAT[Chitchat Node]
+    ROUTER -->|kb_query| KB_QUERY[RAG Search Node]
+    ROUTER -->|handoff| HANDOFF[Escalation Node]
+    
+    CHITCHAT --> END([End])
+    KB_QUERY --> END
+    HANDOFF --> END
+```
+
+### B. Node Execution Details
+1. **Intent Classifier Node**: Sends the user's query and the chat history to the Gemini model using `CLASSIFIER_PROMPT`. The model must output exactly one of three categories: `chitchat`, `kb_query`, or `handoff`.
+2. **Chitchat Node**: Handles greetings, polite phrases, and general small talk. Generates a warm, professional, and very brief reply (1-2 sentences).
+3. **RAG Search Node**: Queries the local FAISS database (using `GoogleGenerativeAIEmbeddings` models/gemini-embedding-001) for the top 3 matches. Injects them into `RESPONDER_PROMPT` to formulate a factual response.
+   * *Fallback*: If the retrieved context cannot answer the question, the node outputs a standard response: *"I couldn't find the answer to that in our files. Let me escalate this to our staff to help you directly."*, which triggers a handoff in the bot loop.
+4. **Escalation Node**: Signals to the bot engine that the conversation must be paused and redirected to a human.
+
+### C. Human Handoff & Admin Relay Sequence
+
+The Telegram bot acts as an intermediary, routing messages between the Visitor, the LLM Agent, and the Admin:
+
+```mermaid
+sequenceDiagram
+    actor Visitor
+    participant Bot as Telegram Bot Engine
+    participant Agent as LangGraph Agent
+    actor Admin
+    
+    Visitor->>Bot: Message ("I lost my keys!")
+    Bot->>Agent: Invoke StateGraph
+    Agent-->>Bot: Intent = handoff
+    Bot->>Bot: Pause AI Session (state.db)
+    Bot->>Admin: Forward query with [Reply] / [Resolve] buttons
+    
+    Note over Admin, Visitor: Human Handoff is Active (AI is muted)
+    
+    Admin->>Bot: Clicks [Reply] button
+    Bot->>Admin: "Connected to Visitor. Type reply below."
+    Admin->>Bot: Type message ("On my way!")
+    Bot->>Visitor: Forward message ("Front Desk: On my way!")
+    
+    Admin->>Bot: Clicks [Resolve] or type /resolve
+    Bot->>Bot: Unpause AI Session (state.db)
+    Bot->>Visitor: "Front Desk closed chat. AI bot is back online!"
+    Bot->>Admin: "Chat session resolved."
+```
+
+---
+
+## 6. Cost Protection & Spam Guardrails
 
 To protect business owners from runaway API costs and spam, the Telegram Bot Handler (`src/telegram_bot/bot.py`) executes two lightweight database checks *before* calling the LangGraph AI model. If a check fails, a static text message is returned, incurring $0.00 in LLM costs.
 
@@ -161,7 +220,7 @@ To protect business owners from runaway API costs and spam, the Telegram Bot Han
 
 ---
 
-## 6. Work Breakdown between Developers
+## 7. Work Breakdown between Developers
 
 ### 🧑‍💻 Developer A: Flat Telegram Bot, State & Protection Guardrails
 * **Deliverables**: `core/main.py`, `core/src/config.py`, `core/src/telegram_bot/*`, `core/src/agent/*`.
@@ -183,7 +242,7 @@ To protect business owners from runaway API costs and spam, the Telegram Bot Han
 
 ---
 
-## 7. Integration Contract (The API Agreement)
+## 8. Integration Contract (The API Agreement)
 
 Developer B provides the search utility:
 ```python
@@ -215,7 +274,7 @@ def search_respond_node(state: AgentState):
 
 ---
 
-## 8. How to Test & Deploy a Business Bot
+## 9. How to Test & Deploy a Business Bot
 
 ### Step 1: Set up the Local Workspace
 ```bash
@@ -257,7 +316,7 @@ To test the exact bundle that will go to production:
 
 ---
 
-## 9. Production Deployment on the VPS
+## 10. Production Deployment on the VPS
 
 1. Copy the compiled `dist/deploy_haircuts.zip` to the target VPS.
 2. Log into the VPS, navigate to the folder, and extract it:

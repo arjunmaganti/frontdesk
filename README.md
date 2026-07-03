@@ -117,3 +117,54 @@ To run a client bot 24/7 on a production VPS:
    ```
 
 The bot will now run in the background, writing conversation backups to the local SQLite database `./state.db`.
+
+---
+
+## 5. Agent State Machine & Handoff Flow
+
+The bot uses LangGraph to orchestrate a deterministic agent state machine. The orchestrator classifies the visitor's intent and routes them dynamically:
+
+### A. State Diagram (Mermaid)
+
+```mermaid
+graph TD
+    START([Start]) --> CLASSIFIER[Intent Classifier Node]
+    CLASSIFIER --> ROUTER{Route by Intent}
+    
+    ROUTER -->|chitchat| CHITCHAT[Chitchat Node]
+    ROUTER -->|kb_query| KB_QUERY[RAG Search Node]
+    ROUTER -->|handoff| HANDOFF[Escalation Node]
+    
+    CHITCHAT --> END([End])
+    KB_QUERY --> END
+    HANDOFF --> END
+```
+
+### B. Human Handoff & Admin Relay Sequence
+
+```mermaid
+sequenceDiagram
+    actor Visitor
+    participant Bot as Telegram Bot Engine
+    participant Agent as LangGraph Agent
+    actor Admin
+    
+    Visitor->>Bot: Message ("I lost my keys!")
+    Bot->>Agent: Invoke StateGraph
+    Agent-->>Bot: Intent = handoff
+    Bot->>Bot: Pause AI Session (state.db)
+    Bot->>Admin: Forward query with [Reply] / [Resolve] buttons
+    
+    Note over Admin, Visitor: Human Handoff is Active (AI is muted)
+    
+    Admin->>Bot: Clicks [Reply] button
+    Bot->>Admin: "Connected to Visitor. Type reply below."
+    Admin->>Bot: Type message ("On my way!")
+    Bot->>Visitor: Forward message ("Front Desk: On my way!")
+    
+    Admin->>Bot: Clicks [Resolve] or type /resolve
+    Bot->>Bot: Unpause AI Session (state.db)
+    Bot->>Visitor: "Front Desk closed chat. AI bot is back online!"
+    Bot->>Admin: "Chat session resolved."
+```
+
