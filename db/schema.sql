@@ -31,21 +31,22 @@ create table public.businesses (
     website_url text not null,
     business_phone text,
     business_address text,
-    map_url text,
+    business_email text, -- Deterministic email override
+    map_url text,        -- Deterministic map url override
     business_timezone text not null default 'America/Los_Angeles',
     admin_chat_id text,
     active_visitor_chat_id text,
     created_at timestamptz not null default now()
 );
 
--- 4. Create Visitors Table (Active Session Mapping)
+-- 5. Create Visitors Table (Active Session Mapping)
 create table public.visitors (
     visitor_chat_id text primary key,
     active_business_id text references public.businesses(business_id) on delete cascade,
     created_at timestamptz not null default now()
 );
 
--- 5. Create Admin Relay Table (Handoff State & Question Logging)
+-- 6. Create Admin Relay Table (Handoff State & Question Logging)
 create table public.admin_relay (
     visitor_chat_id text primary key,
     business_id text references public.businesses(business_id) on delete cascade,
@@ -53,7 +54,7 @@ create table public.admin_relay (
     pending_question text
 );
 
--- 6. Create Knowledge Chunks Table (Unified Vector DB Chunks)
+-- 7. Create Knowledge Chunks Table (Unified Vector DB Chunks)
 -- (No index defined on embedding because 3072 dimensions exceed pgvector index limits. 
 -- Scoping searches by business_id ensures sub-millisecond sequential scans).
 create table public.knowledge_chunks (
@@ -65,7 +66,7 @@ create table public.knowledge_chunks (
     created_at timestamptz not null default now()
 );
 
--- 7. Create Escalations Cache Table (Fuzzy Q&A Resolved Records)
+-- 8. Create Escalations Cache Table (Fuzzy Q&A Resolved Records)
 create table public.escalations_cache (
     id bigint generated always as identity primary key,
     business_id text references public.businesses(business_id) on delete cascade,
@@ -75,7 +76,7 @@ create table public.escalations_cache (
     constraint unique_business_question unique (business_id, question)
 );
 
--- 8. Create Crawl Jobs Table (Crawler Task Queue)
+-- 9. Create Crawl Jobs Table (Crawler Task Queue)
 create table public.crawl_jobs (
     id uuid primary key default gen_random_uuid(),
     business_id text references public.businesses(business_id) on delete cascade,
@@ -86,7 +87,7 @@ create table public.crawl_jobs (
     updated_at timestamptz not null default now()
 );
 
--- 9. Create Business Load Table (Bulk Onboarding Staging Queue)
+-- 10. Create Business Load Table (Bulk Onboarding Staging Queue with Optional Overrides)
 create table public.business_load (
     id uuid primary key default gen_random_uuid(),
     business_id text not null,
@@ -95,25 +96,33 @@ create table public.business_load (
     website_url text not null,
     business_timezone text not null default 'America/Los_Angeles',
     admin_chat_id text,
+    business_phone text,   -- Optional override
+    business_address text, -- Optional override
+    business_email text,   -- Optional override
+    map_url text,          -- Optional override
     status text not null default 'pending', -- 'pending' | 'processing' | 'completed' | 'failed'
     error_message text,
     created_at timestamptz not null default now(),
     processed_at timestamptz
 );
 
--- 10. Create Business Ingestion Function
+-- 11. Create Business Ingestion Function
 create or replace function public.process_business_load_row()
 returns trigger as $$
 begin
     if new.status = 'pending' then
-        -- A. Upsert business profile metadata
+        -- A. Upsert business profile metadata, transferring overrides if provided
         insert into public.businesses (
             business_id, 
             business_name, 
             agent_name, 
             website_url, 
             business_timezone, 
-            admin_chat_id
+            admin_chat_id,
+            business_phone,
+            business_address,
+            business_email,
+            map_url
         )
         values (
             new.business_id, 
@@ -121,14 +130,22 @@ begin
             new.agent_name, 
             new.website_url, 
             new.business_timezone, 
-            new.admin_chat_id
+            new.admin_chat_id,
+            new.business_phone,
+            new.business_address,
+            new.business_email,
+            new.map_url
         )
         on conflict (business_id) do update set
             business_name = excluded.business_name,
             agent_name = excluded.agent_name,
             website_url = excluded.website_url,
             business_timezone = excluded.business_timezone,
-            admin_chat_id = coalesce(excluded.admin_chat_id, public.businesses.admin_chat_id);
+            admin_chat_id = coalesce(excluded.admin_chat_id, public.businesses.admin_chat_id),
+            business_phone = coalesce(excluded.business_phone, public.businesses.business_phone),
+            business_address = coalesce(excluded.business_address, public.businesses.business_address),
+            business_email = coalesce(excluded.business_email, public.businesses.business_email),
+            map_url = coalesce(excluded.map_url, public.businesses.map_url);
 
         -- B. Automatically append task to crawler queue
         insert into public.crawl_jobs (business_id, website_url, status)
@@ -142,7 +159,7 @@ begin
 end;
 $$ language plpgsql;
 
--- 11. Bind Trigger to Business Load Table
+-- 12. Bind Trigger to Business Load Table
 create trigger trigger_process_business_load
 before insert on public.business_load
 for each row

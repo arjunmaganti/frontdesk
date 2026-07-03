@@ -99,15 +99,15 @@ def set_visitor_business(visitor_chat_id: str, business_id: str):
         conn.close()
 
 def get_business_config(business_id: str) -> dict:
-    """Gets all settings (name, agent, phone, address, map_url, timezone, admin_chat_id) for a business."""
+    """Gets all settings (name, agent, phone, address, email, map_url, timezone, admin_chat_id) for a business."""
     conn = get_pg_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT business_name, agent_name, website_url, business_phone, 
-                       business_address, map_url, business_timezone, admin_chat_id,
-                       active_visitor_chat_id
+                       business_address, business_email, map_url, business_timezone, 
+                       admin_chat_id, active_visitor_chat_id
                 FROM public.businesses 
                 WHERE business_id = %s
                 """,
@@ -122,10 +122,11 @@ def get_business_config(business_id: str) -> dict:
                     "website_url": row[2],
                     "business_phone": row[3],
                     "business_address": row[4],
-                    "map_url": row[5],
-                    "business_timezone": row[6],
-                    "admin_chat_id": row[7],
-                    "active_visitor_chat_id": row[8]
+                    "business_email": row[5],
+                    "map_url": row[6],
+                    "business_timezone": row[7],
+                    "admin_chat_id": row[8],
+                    "active_visitor_chat_id": row[9]
                 }
             return None
     finally:

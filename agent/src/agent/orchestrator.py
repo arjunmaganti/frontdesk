@@ -93,6 +93,19 @@ def search_respond_node(state: AgentState, config: RunnableConfig) -> dict:
     biz_config = session.get_business_config(business_id) if business_id else None
     timezone_str = biz_config.get("business_timezone") if biz_config else "America/Los_Angeles"
     
+    # 3. Prepend deterministic contact profile details to context to prevent hallucinations
+    if biz_config:
+        profile_context = (
+            "BUSINESS PROFILE DETAILS:\n"
+            f"- Business Name: {biz_config.get('business_name') or 'Unknown'}\n"
+            f"- Receptionist Name: {biz_config.get('agent_name') or 'Frontdesk'}\n"
+            f"- Phone: {biz_config.get('business_phone') or 'Not provided'}\n"
+            f"- Address: {biz_config.get('business_address') or 'Not provided'}\n"
+            f"- Email: {biz_config.get('business_email') or 'Not provided'}\n"
+            f"- Website: {biz_config.get('website_url') or 'Not provided'}\n\n"
+        )
+        context = profile_context + context
+
     from zoneinfo import ZoneInfo
     from datetime import datetime
     try:
@@ -104,7 +117,7 @@ def search_respond_node(state: AgentState, config: RunnableConfig) -> dict:
     current_day = now.strftime("%A")
     current_time = now.strftime("%I:%M %p")
     
-    # 3. Formulate factual answer
+    # 4. Formulate factual answer
     llm = get_llm(temperature=0.2)
     system_prompt = prompts.RESPONDER_PROMPT.format(
         context=context,

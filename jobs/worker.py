@@ -72,9 +72,10 @@ def extract_contact_details(md_dir: str, gemini_key: str) -> dict:
             "Analyze the business website scrapings below and extract their contact coordinates:\n"
             "1. The business phone number. Format it as international digits: +1XXXXXXXXXX (e.g., +14082105851). "
             "If it is a local USA number like 408-210-5851, format it as +14082105851.\n"
-            "2. The physical street address of the salon/business.\n\n"
+            "2. The physical street address of the salon/business.\n"
+            "3. The contact email address.\n\n"
             "You MUST respond ONLY with a raw JSON object (no markdown, no backticks, no wrap, no extra text) in this exact schema:\n"
-            '{\n  "phone": "+1XXXXXXXXXX",\n  "address": "Street Address, City, State ZIP"\n}'
+            '{\n  "phone": "+1XXXXXXXXXX",\n  "address": "Street Address, City, State ZIP",\n  "email": "contact@domain.com"\n}'
         )
         
         response = llm.invoke([
@@ -125,11 +126,12 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
             # A. Execute website scraper
             crawl_site(website_url, temp_dir, max_pages=15, max_depth=2)
             
-            # B. Extract coordinates (Phone & Address) using Gemini
+            # B. Extract coordinates (Phone, Address & Email) using Gemini
             gemini_key = config.GEMINI_API_KEY
             coords = extract_contact_details(temp_dir, gemini_key)
             phone = coords.get("phone")
             address = coords.get("address")
+            email = coords.get("email")
             
             map_url = None
             if address:
@@ -160,16 +162,17 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
             conn = get_pg_connection()
             try:
                 with conn.cursor() as cur:
-                    # 1. Update business contact details
+                    # 1. Update business contact details - non-destructive COALESCE (database overrides preferred)
                     cur.execute(
                         """
                         UPDATE public.businesses 
-                        SET business_phone = COALESCE(%s, business_phone),
-                            business_address = COALESCE(%s, business_address),
-                            map_url = COALESCE(%s, map_url)
+                        SET business_phone = COALESCE(business_phone, %s),
+                            business_address = COALESCE(business_address, %s),
+                            business_email = COALESCE(business_email, %s),
+                            map_url = COALESCE(map_url, %s)
                         WHERE business_id = %s
                         """,
-                        (phone, address, map_url, business_id)
+                        (phone, address, email, map_url, business_id)
                     )
                     
                     # 2. Delete old vectors
@@ -188,11 +191,21 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
                             (business_id, chunk_text, str(vector), None)
                         )
                     
-                    # 4. Fetch admin_chat_id to alert them
-                    cur.execute("SELECT admin_chat_id, business_name FROM public.businesses WHERE business_id = %s", (business_id,))
+                    # 4. Fetch admin_chat_id and final contact details to alert them
+                    cur.execute(
+                        """
+                        SELECT admin_chat_id, business_name, business_phone, business_address, business_email 
+                        FROM public.businesses 
+                        WHERE business_id = %s
+                        """, 
+                        (business_id,)
+                    )
                     biz_row = cur.fetchone()
                     admin_chat_id = biz_row[0] if biz_row else None
                     business_name = biz_row[1] if biz_row else business_id
+                    final_phone = biz_row[2] if biz_row else None
+                    final_address = biz_row[3] if biz_row else None
+                    final_email = biz_row[4] if biz_row else None
                     
                     conn.commit()
                     logger.info("💾 Transaction committed successfully. Stored new vector chunks.")
@@ -207,8 +220,9 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
                     f"🚀 <b>Crawling & Compilation Complete!</b>\n\n"
                     f"🏢 <b>Business:</b> {business_name}\n"
                     f"🌐 <b>Website:</b> <code>{website_url}</code>\n"
-                    f"🔹 <b>Extracted Phone:</b> {phone or 'Not Found'}\n"
-                    f"🔹 <b>Extracted Address:</b> {address or 'Not Found'}\n\n"
+                    f"🔹 <b>Phone:</b> {final_phone or 'Not Found'}\n"
+                    f"🔹 <b>Address:</b> {final_address or 'Not Found'}\n"
+                    f"🔹 <b>Email:</b> {final_email or 'Not Found'}\n\n"
                     f"Your customer assistant is now fully updated and active!"
                 )
                 asyncio.run(send_telegram_alert(admin_chat_id, alert_text))

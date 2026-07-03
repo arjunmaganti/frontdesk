@@ -140,6 +140,7 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🌐 <b>Website URL:</b> {biz_config['website_url']}\n"
         f"📍 <b>Phone:</b> {biz_config.get('business_phone') or 'Not Extracted'}\n"
         f"🗺️ <b>Address:</b> {biz_config.get('business_address') or 'Not Extracted'}\n"
+        f"📧 <b>Email:</b> {biz_config.get('business_email') or 'Not Extracted'}\n"
         f"🌍 <b>Timezone:</b> <code>{biz_config['business_timezone']}</code>\n\n"
         f"Select an option below to manage your virtual front desk:",
         reply_markup=reply_markup,
