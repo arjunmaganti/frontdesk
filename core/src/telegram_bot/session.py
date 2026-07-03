@@ -3,21 +3,26 @@ import time
 import difflib
 from datetime import datetime
 import src.config as config
+from src.db import get_pg_connection
 
-DB_PATH = "state.db"
+LOCAL_DB_PATH = "state.db"
 
-def get_db_connection(db_path=DB_PATH):
-    """Establishes and returns a connection to the SQLite database."""
+# =====================================================================
+# 1. Local SQLite Helpers (Low-Latency Rate Limiter & Message Cap)
+# =====================================================================
+
+def get_local_connection(db_path=LOCAL_DB_PATH):
+    """Establishes and returns a connection to the local SQLite database."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db(db_path=DB_PATH):
-    """Creates the database schema if it doesn't already exist."""
-    with get_db_connection(db_path) as conn:
+def init_db(db_path=LOCAL_DB_PATH):
+    """Creates the local database tables for transient cap and rate calculations."""
+    with get_local_connection(db_path) as conn:
         cursor = conn.cursor()
         
-        # 1. Daily usage table to track LLM costs
+        # Daily usage table to track LLM costs
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS daily_usage (
                 date TEXT PRIMARY KEY,
@@ -25,46 +30,19 @@ def init_db(db_path=DB_PATH):
             )
         """)
         
-        # 2. Rate limiter table for spam protection
+        # Rate limiter table for spam protection
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS rate_limiter (
                 chat_id TEXT,
                 timestamp REAL
             )
         """)
-        
-        # 3. Session state mapping for active handoffs
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS admin_relay (
-                visitor_chat_id TEXT PRIMARY KEY,
-                is_paused INTEGER DEFAULT 0,
-                active_reply_to TEXT,
-                pending_question TEXT
-            )
-        """)
-        
-        # Migrating existing databases to include the pending_question column if missing
-        try:
-            cursor.execute("ALTER TABLE admin_relay ADD COLUMN pending_question TEXT")
-        except sqlite3.OperationalError:
-            pass # Column already exists
-            
-        # 4. Cache resolved QA for future escalations
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS escalations_cache (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                question TEXT UNIQUE,
-                answer TEXT,
-                timestamp REAL
-            )
-        """)
-        
         conn.commit()
 
-def check_daily_cap(db_path=DB_PATH) -> bool:
+def check_daily_cap(db_path=LOCAL_DB_PATH) -> bool:
     """Returns True if the tenant's daily message cap has been exceeded, otherwise False."""
     current_date = datetime.utcnow().strftime("%Y-%m-%d")
-    with get_db_connection(db_path) as conn:
+    with get_local_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT count FROM daily_usage WHERE date = ?", (current_date,))
         row = cursor.fetchone()
@@ -73,12 +51,11 @@ def check_daily_cap(db_path=DB_PATH) -> bool:
             return True
         return False
 
-def increment_daily_usage(db_path=DB_PATH):
+def increment_daily_usage(db_path=LOCAL_DB_PATH):
     """Increments the daily message count for the current date."""
     current_date = datetime.utcnow().strftime("%Y-%m-%d")
-    with get_db_connection(db_path) as conn:
+    with get_local_connection(db_path) as conn:
         cursor = conn.cursor()
-        # Upsert date count
         cursor.execute("""
             INSERT INTO daily_usage (date, count) 
             VALUES (?, 1)
@@ -86,156 +63,286 @@ def increment_daily_usage(db_path=DB_PATH):
         """, (current_date,))
         conn.commit()
 
-def check_rate_limit(chat_id: str, db_path=DB_PATH) -> bool:
-    """
-    Returns True if the user is spamming (exceeded message limit within the window).
-    Otherwise registers the message timestamp and returns False.
-    """
+def check_rate_limit(chat_id: str, db_path=LOCAL_DB_PATH) -> bool:
+    """Returns True if the user has exceeded their spam limit inside the rate window."""
     now = time.time()
     cutoff = now - config.USER_RATE_WINDOW
     
-    with get_db_connection(db_path) as conn:
+    with get_local_connection(db_path) as conn:
         cursor = conn.cursor()
-        
-        # 1. Clean up old logs outside the rate window
         cursor.execute("DELETE FROM rate_limiter WHERE timestamp < ?", (cutoff,))
-        
-        # 2. Count messages in current window for this user
         cursor.execute("SELECT COUNT(*) as count FROM rate_limiter WHERE chat_id = ?", (chat_id,))
         count = cursor.fetchone()["count"]
         
         if count >= config.USER_RATE_LIMIT:
-            return True  # Rate limit exceeded (spamming)
+            return True
             
-        # 3. Log current message timestamp
         cursor.execute("INSERT INTO rate_limiter (chat_id, timestamp) VALUES (?, ?)", (chat_id, now))
         conn.commit()
         return False
 
-def is_visitor_paused(visitor_chat_id: str, db_path=DB_PATH) -> bool:
+
+# =====================================================================
+# 2. Supabase PostgreSQL Helpers (Relays, Configuration & Cache)
+# =====================================================================
+
+def get_visitor_business(visitor_chat_id: str) -> str:
+    """Retrieves the active business ID linked to the visitor from Supabase."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT active_business_id FROM public.visitors WHERE visitor_chat_id = %s", (visitor_chat_id,))
+            row = cur.fetchone()
+            if row:
+                return row[0]
+            return None
+    finally:
+        conn.close()
+
+def set_visitor_business(visitor_chat_id: str, business_id: str):
+    """Binds the visitor to their active business in Supabase."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO public.visitors (visitor_chat_id, active_business_id)
+                VALUES (%s, %s)
+                ON CONFLICT (visitor_chat_id) DO UPDATE SET active_business_id = EXCLUDED.active_business_id
+                """,
+                (visitor_chat_id, business_id)
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+def get_business_config(business_id: str) -> dict:
+    """Gets all settings (name, agent, phone, address, map_url, timezone, admin_chat_id) for a business."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT business_name, agent_name, website_url, business_phone, 
+                       business_address, map_url, business_timezone, admin_chat_id,
+                       active_visitor_chat_id
+                FROM public.businesses 
+                WHERE business_id = %s
+                """,
+                (business_id,)
+            )
+            row = cur.fetchone()
+            if row:
+                return {
+                    "business_id": business_id,
+                    "business_name": row[0],
+                    "agent_name": row[1],
+                    "website_url": row[2],
+                    "business_phone": row[3],
+                    "business_address": row[4],
+                    "map_url": row[5],
+                    "business_timezone": row[6],
+                    "admin_chat_id": row[7],
+                    "active_visitor_chat_id": row[8]
+                }
+            return None
+    finally:
+        conn.close()
+
+def bind_business_admin(business_id: str, admin_chat_id: str) -> str:
+    """Associates the owner's Telegram chat_id with their registered business ID."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            # Check if business exists
+            cur.execute("SELECT business_name FROM public.businesses WHERE business_id = %s", (business_id,))
+            row = cur.fetchone()
+            if not row:
+                return None # Business not found
+            
+            cur.execute(
+                "UPDATE public.businesses SET admin_chat_id = %s WHERE business_id = %s",
+                (admin_chat_id, business_id)
+            )
+            conn.commit()
+            return row[0] # Return business name
+    finally:
+        conn.close()
+
+def is_visitor_paused(visitor_chat_id: str) -> bool:
     """Returns True if the visitor's AI session is muted (human handoff is active)."""
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT is_paused FROM admin_relay WHERE visitor_chat_id = ?", (visitor_chat_id,))
-        row = cursor.fetchone()
-        if row:
-            return row["is_paused"] == 1
-        return False
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT is_paused FROM public.admin_relay WHERE visitor_chat_id = %s", (visitor_chat_id,))
+            row = cur.fetchone()
+            if row:
+                return bool(row[0])
+            return False
+    finally:
+        conn.close()
 
-def set_visitor_paused(visitor_chat_id: str, is_paused: bool, db_path=DB_PATH):
-    """Sets the is_paused status for a visitor's AI session."""
-    val = 1 if is_paused else 0
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO admin_relay (visitor_chat_id, is_paused)
-            VALUES (?, ?)
-            ON CONFLICT(visitor_chat_id) DO UPDATE SET is_paused = ?
-        """, (visitor_chat_id, val, val))
-        conn.commit()
+def set_visitor_paused(visitor_chat_id: str, is_paused: bool, business_id: str):
+    """Sets the is_paused status for a visitor's AI session in Supabase."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO public.admin_relay (visitor_chat_id, business_id, is_paused)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (visitor_chat_id) DO UPDATE SET is_paused = EXCLUDED.is_paused
+                """,
+                (visitor_chat_id, business_id, is_paused)
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
-def set_active_visitor(visitor_chat_id: str, db_path=DB_PATH):
-    """Sets which visitor the admin's next messages will be relayed to."""
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        # First clear any active reply pointers
-        cursor.execute("UPDATE admin_relay SET active_reply_to = NULL")
-        # Set the active pointer for this visitor
-        cursor.execute("""
-            INSERT INTO admin_relay (visitor_chat_id, active_reply_to)
-            VALUES (?, ?)
-            ON CONFLICT(visitor_chat_id) DO UPDATE SET active_reply_to = ?
-        """, (visitor_chat_id, visitor_chat_id, visitor_chat_id))
-        conn.commit()
+def get_business_by_admin(admin_chat_id: str) -> dict:
+    """Finds a business configuration where this admin_chat_id is registered."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT business_id, business_name FROM public.businesses WHERE admin_chat_id = %s LIMIT 1",
+                (admin_chat_id,)
+            )
+            row = cur.fetchone()
+            if row:
+                return {"business_id": row[0], "business_name": row[1]}
+            return None
+    finally:
+        conn.close()
 
-def get_active_visitor(db_path=DB_PATH) -> str:
-    """Returns the visitor Chat ID that is currently targeted for admin replies, or None."""
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT visitor_chat_id FROM admin_relay WHERE active_reply_to IS NOT NULL")
-        row = cursor.fetchone()
-        if row:
-            return row["visitor_chat_id"]
-        return None
+def set_active_visitor_for_admin(business_id: str, visitor_chat_id: str):
+    """Sets which visitor the admin's next messages will be routed/relayed to."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE public.businesses SET active_visitor_chat_id = %s WHERE business_id = %s",
+                (visitor_chat_id, business_id)
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
-def clear_active_visitor(db_path=DB_PATH):
-    """Clears the active reply pointer for the admin."""
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("UPDATE admin_relay SET active_reply_to = NULL")
-        conn.commit()
+def get_active_visitor_for_admin(admin_chat_id: str) -> str:
+    """Retrieves the visitor chat ID currently targeted for admin replies."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT active_visitor_chat_id FROM public.businesses WHERE admin_chat_id = %s AND active_visitor_chat_id IS NOT NULL",
+                (admin_chat_id,)
+            )
+            row = cur.fetchone()
+            if row:
+                return row[0]
+            return None
+    finally:
+        conn.close()
 
-def save_pending_question(visitor_chat_id: str, question: str, db_path=DB_PATH):
-    """Saves the visitor's latest unanswered question to their session state."""
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO admin_relay (visitor_chat_id, pending_question)
-            VALUES (?, ?)
-            ON CONFLICT(visitor_chat_id) DO UPDATE SET pending_question = ?
-        """, (visitor_chat_id, question, question))
-        conn.commit()
+def clear_active_visitor_for_admin(business_id: str):
+    """Clears the active reply pointer for the business admin."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE public.businesses SET active_visitor_chat_id = NULL WHERE business_id = %s", (business_id,))
+            conn.commit()
+    finally:
+        conn.close()
 
-def get_pending_question(visitor_chat_id: str, db_path=DB_PATH) -> str:
+def save_pending_question(visitor_chat_id: str, question: str, business_id: str):
+    """Saves the visitor's latest unanswered question to the relay state in Supabase."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO public.admin_relay (visitor_chat_id, business_id, pending_question)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (visitor_chat_id) DO UPDATE SET pending_question = EXCLUDED.pending_question
+                """,
+                (visitor_chat_id, business_id, question)
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+def get_pending_question(visitor_chat_id: str) -> str:
     """Gets the visitor's pending unanswered question."""
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT pending_question FROM admin_relay WHERE visitor_chat_id = ?", (visitor_chat_id,))
-        row = cursor.fetchone()
-        if row:
-            return row["pending_question"]
-        return None
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pending_question FROM public.admin_relay WHERE visitor_chat_id = %s", (visitor_chat_id,))
+            row = cur.fetchone()
+            if row:
+                return row[0]
+            return None
+    finally:
+        conn.close()
 
-def save_resolved_qa(question: str, answer: str, db_path=DB_PATH):
-    """Saves a resolved Q&A pair into the escalations cache."""
+def save_resolved_qa(business_id: str, question: str, answer: str):
+    """Saves a resolved Q&A pair into the escalations cache table in Supabase."""
     if not question or not answer:
         return
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO escalations_cache (question, answer, timestamp)
-            VALUES (?, ?, ?)
-            ON CONFLICT(question) DO UPDATE SET answer = ?, timestamp = ?
-        """, (question, answer, time.time(), answer, time.time()))
-        conn.commit()
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO public.escalations_cache (business_id, question, answer, timestamp)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (business_id, question) DO UPDATE SET answer = EXCLUDED.answer, timestamp = NOW()
+                """,
+                (business_id, question, answer)
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
-def find_cached_answer(query: str, db_path=DB_PATH) -> str:
-    """Fuzzy searches for a previously resolved QA pair in SQLite."""
-    if not query:
+def find_cached_answer(business_id: str, query: str) -> str:
+    """Fuzzy searches for a previously resolved QA pair inside the Supabase cache."""
+    if not query or not business_id:
         return None
         
     normalized_query = query.strip().lower()
     
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT question, answer FROM escalations_cache")
-        rows = cursor.fetchall()
-        
-        best_ratio = 0.0
-        best_answer = None
-        
-        for row in rows:
-            q = row["question"].strip().lower()
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT question, answer FROM public.escalations_cache WHERE business_id = %s", (business_id,))
+            rows = cur.fetchall()
             
-            # 1. Exact match
-            if normalized_query == q:
-                return row["answer"]
+            best_ratio = 0.0
+            best_answer = None
+            
+            for row in rows:
+                q = row[0].strip().lower()
                 
-            # 2. Fuzzy match ratio
-            ratio = difflib.SequenceMatcher(None, normalized_query, q).ratio()
-            if ratio > 0.85:
-                return row["answer"]
-                
-            # 3. Fallback to word-overlap checks
-            q_words = set(q.split())
-            query_words = set(normalized_query.split())
-            if len(q_words) > 0 and len(query_words) > 0:
-                overlap = len(q_words.intersection(query_words)) / max(len(q_words), len(query_words))
-                if overlap > 0.80 and ratio > best_ratio:
-                    best_ratio = ratio
-                    best_answer = row["answer"]
+                # 1. Exact match
+                if normalized_query == q:
+                    return row[1]
                     
-        if best_ratio > 0.70:
-            return best_answer
-            
-    return None
+                # 2. Fuzzy match ratio
+                ratio = difflib.SequenceMatcher(None, normalized_query, q).ratio()
+                if ratio > 0.85:
+                    return row[1]
+                    
+                # 3. Fallback to word-overlap checks
+                q_words = set(q.split())
+                query_words = set(normalized_query.split())
+                if len(q_words) > 0 and len(query_words) > 0:
+                    overlap = len(q_words.intersection(query_words)) / max(len(q_words), len(query_words))
+                    if overlap > 0.80 and ratio > best_ratio:
+                        best_ratio = ratio
+                        best_answer = row[1]
+                        
+            if best_ratio > 0.70:
+                return best_answer
+                
+        return None
+    finally:
+        conn.close()
