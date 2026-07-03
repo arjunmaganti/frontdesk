@@ -16,6 +16,7 @@ create table if not exists public.businesses (
     map_url text,
     business_timezone text not null default 'America/Los_Angeles',
     admin_chat_id text,
+    active_visitor_chat_id text,
     created_at timestamptz not null default now()
 );
 
