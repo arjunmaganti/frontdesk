@@ -79,9 +79,27 @@ def search_respond_node(state: AgentState) -> dict:
     # 1. Fetch relevant blocks from FAISS
     context = query_knowledge_base(user_query)
     
-    # 2. Formulate factual answer
+    # 2. Evaluate dynamic business timezone local time
+    from zoneinfo import ZoneInfo
+    from datetime import datetime
+    
+    timezone_str = getattr(config, "BUSINESS_TIMEZONE", "America/Los_Angeles")
+    try:
+        tz = ZoneInfo(timezone_str)
+    except Exception:
+        tz = ZoneInfo("UTC") # fallback
+        
+    now = datetime.now(tz)
+    current_day = now.strftime("%A")
+    current_time = now.strftime("%I:%M %p")
+    
+    # 3. Formulate factual answer
     llm = get_llm(temperature=0.2)
-    system_prompt = prompts.RESPONDER_PROMPT.format(context=context)
+    system_prompt = prompts.RESPONDER_PROMPT.format(
+        context=context,
+        current_day=current_day,
+        current_time=current_time
+    )
     
     response = llm.invoke([
         SystemMessage(content=system_prompt),
