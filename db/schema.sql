@@ -44,10 +44,10 @@ create table if not exists public.knowledge_chunks (
     created_at timestamptz not null default now()
 );
 
--- Create an HNSW index on the vector embedding column for fast cosine searches
+-- Create an IVFFlat index on the vector embedding column for fast cosine searches
 create index if not exists knowledge_chunks_embedding_idx 
 on public.knowledge_chunks 
-using hnsw (embedding vector_cosine_ops);
+using ivfflat (embedding vector_cosine_ops) with (lists = 10);
 
 -- 6. Create Escalations Cache Table (Fuzzy Q&A Resolved Records)
 create table if not exists public.escalations_cache (
