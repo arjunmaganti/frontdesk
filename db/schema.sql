@@ -6,6 +6,7 @@
 drop trigger if exists trigger_process_business_load on public.business_load cascade;
 drop function if exists public.process_business_load_row() cascade;
 drop table if exists public.business_load cascade;
+drop table if exists public.daily_usage cascade;
 drop table if exists public.crawl_jobs cascade;
 drop table if exists public.escalations_cache cascade;
 drop table if exists public.knowledge_chunks cascade;
@@ -16,7 +17,13 @@ drop table if exists public.businesses cascade;
 -- 2. Enable pgvector extension for semantic search
 create extension if not exists vector;
 
--- 3. Create Businesses Table (Tenant Metadata & Settings)
+-- 3. Create Daily Usage Table (Stateless Budget Cap persistence)
+create table public.daily_usage (
+    usage_date date primary key default current_date,
+    message_count integer not null default 0
+);
+
+-- 4. Create Businesses Table (Tenant Metadata & Settings)
 create table public.businesses (
     business_id text primary key,
     business_name text not null,
