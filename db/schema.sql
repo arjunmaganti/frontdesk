@@ -39,7 +39,7 @@ create table if not exists public.knowledge_chunks (
     id uuid primary key default gen_random_uuid(),
     business_id text references public.businesses(business_id) on delete cascade,
     content text not null,
-    embedding vector(1536) not null,
+    embedding vector(3072) not null,
     metadata jsonb,
     created_at timestamptz not null default now()
 );
