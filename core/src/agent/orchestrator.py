@@ -1,54 +1,67 @@
 from typing import Literal
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-import src.config as config
+import src.config as config_module
 from src.agent.state import AgentState
 import src.agent.prompt as prompts
+import src.telegram_bot.session as session
 from src.search.service import query_knowledge_base
 
 def get_llm(temperature=0.0):
     """Returns a ChatGoogleGenerativeAI model instance configured with the tenant's model name."""
     return ChatGoogleGenerativeAI(
-        model=config.LLM_MODEL_NAME,
+        model=config_module.LLM_MODEL_NAME,
         temperature=temperature
     )
 
 # Node 1: Classifier
 def classify_intent_node(state: AgentState) -> dict:
     llm = get_llm(temperature=0.0)
-    user_message = state["messages"][-1].content
     
-    # Run classification
+    # Run the classification prompt
+    user_query = state["messages"][-1].content
+    
     response = llm.invoke([
         SystemMessage(content=prompts.CLASSIFIER_PROMPT),
-        HumanMessage(content=user_message)
+        HumanMessage(content=user_query)
     ])
     
-    content_str = response.content
-    if isinstance(content_str, list):
-        content_str = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in content_str])
-    raw_intent = content_str.strip().lower()
+    raw_intent = response.content.strip().lower()
     
-    # Guard against LLM formatting deviations
-    if "chitchat" in raw_intent:
-        intent = "chitchat"
-    elif "handoff" in raw_intent:
+    if "handoff" in raw_intent:
         intent = "handoff"
+    elif "chitchat" in raw_intent:
+        intent = "chitchat"
     else:
         intent = "kb_query"
         
     return {"intent": intent}
 
 # Node 2: Casual Reply
-def casual_reply_node(state: AgentState) -> dict:
+def casual_reply_node(state: AgentState, config: RunnableConfig) -> dict:
     llm = get_llm(temperature=0.5)
     
-    # Determine the time of day dynamically
+    business_id = config.get("configurable", {}).get("tenant_id")
+    biz_config = session.get_business_config(business_id) if business_id else None
+    
+    # Fallbacks if business config cannot be loaded
+    business_name = biz_config.get("business_name") if biz_config else getattr(config_module, "BUSINESS_NAME", "our business")
+    agent_name = biz_config.get("agent_name") if biz_config else getattr(config_module, "AGENT_NAME", "Frontdesk")
+    timezone_str = biz_config.get("business_timezone") if biz_config else "America/Los_Angeles"
+    
+    # Determine the time of day dynamically based on business timezone local time
+    from zoneinfo import ZoneInfo
     from datetime import datetime
-    hour = datetime.now().hour
+    try:
+        tz = ZoneInfo(timezone_str)
+    except Exception:
+        tz = ZoneInfo("America/Los_Angeles")
+        
+    hour = datetime.now(tz).hour
     if hour < 12:
         time_of_day = "morning"
     elif hour < 17:
@@ -56,10 +69,6 @@ def casual_reply_node(state: AgentState) -> dict:
     else:
         time_of_day = "evening"
         
-    business_name = getattr(config, "BUSINESS_NAME", "our business")
-    
-    agent_name = getattr(config, "AGENT_NAME", "Frontdesk")
-    
     # Format the dynamic system prompt
     formatted_system_prompt = prompts.CHITCHAT_PROMPT.format(
         business_name=business_name,
@@ -73,21 +82,23 @@ def casual_reply_node(state: AgentState) -> dict:
     return {"messages": [response]}
 
 # Node 3: Search & Respond (RAG)
-def search_respond_node(state: AgentState) -> dict:
+def search_respond_node(state: AgentState, config: RunnableConfig) -> dict:
     user_query = state["messages"][-1].content
+    business_id = config.get("configurable", {}).get("tenant_id")
     
-    # 1. Fetch relevant blocks from FAISS
-    context = query_knowledge_base(user_query)
+    # 1. Fetch relevant blocks from Supabase pgvector
+    context = query_knowledge_base(user_query, business_id)
     
     # 2. Evaluate dynamic business timezone local time
+    biz_config = session.get_business_config(business_id) if business_id else None
+    timezone_str = biz_config.get("business_timezone") if biz_config else "America/Los_Angeles"
+    
     from zoneinfo import ZoneInfo
     from datetime import datetime
-    
-    timezone_str = getattr(config, "BUSINESS_TIMEZONE", "America/Los_Angeles")
     try:
         tz = ZoneInfo(timezone_str)
     except Exception:
-        tz = ZoneInfo("UTC") # fallback
+        tz = ZoneInfo("America/Los_Angeles") # fallback
         
     now = datetime.now(tz)
     current_day = now.strftime("%A")
