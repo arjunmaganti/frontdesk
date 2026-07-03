@@ -90,7 +90,11 @@ async def run_simulation_loop():
             )
             
             # Print agent outputs
-            final_response = result["messages"][-1].content
+            content_val = result["messages"][-1].content
+            if isinstance(content_val, list):
+                final_response = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in content_val])
+            else:
+                final_response = str(content_val)
             intent = result.get("intent", "unknown")
             print(f"🤖 Bot classified intent: [{intent}]")
             print(f"🤖 Bot: {final_response}")

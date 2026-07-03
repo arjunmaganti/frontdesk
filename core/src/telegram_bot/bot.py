@@ -144,7 +144,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         # Get final response and the classified intent
-        final_response = result["messages"][-1].content
+        content_val = result["messages"][-1].content
+        if isinstance(content_val, list):
+            final_response = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in content_val])
+        else:
+            final_response = str(content_val)
         intent = result.get("intent", "kb_query")
         
         # E. Handle Handoff Action

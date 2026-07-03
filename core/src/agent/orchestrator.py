@@ -27,7 +27,10 @@ def classify_intent_node(state: AgentState) -> dict:
         HumanMessage(content=user_message)
     ])
     
-    raw_intent = response.content.strip().lower()
+    content_str = response.content
+    if isinstance(content_str, list):
+        content_str = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in content_str])
+    raw_intent = content_str.strip().lower()
     
     # Guard against LLM formatting deviations
     if "chitchat" in raw_intent:
