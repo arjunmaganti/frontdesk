@@ -1,12 +1,23 @@
 -- =====================================================================
--- Supabase PostgreSQL Schema Setup (Multi-Tenant pgvector Architecture)
+-- Unified Schema Initialization for Scaled Multi-Tenant Platform
 -- =====================================================================
 
--- 1. Enable pgvector extension for semantic search
+-- 1. Cascading cleanup of previous structures (for clean rebuilds)
+drop trigger if exists trigger_process_business_load on public.business_load cascade;
+drop function if exists public.process_business_load_row() cascade;
+drop table if exists public.business_load cascade;
+drop table if exists public.crawl_jobs cascade;
+drop table if exists public.escalations_cache cascade;
+drop table if exists public.knowledge_chunks cascade;
+drop table if exists public.admin_relay cascade;
+drop table if exists public.visitors cascade;
+drop table if exists public.businesses cascade;
+
+-- 2. Enable pgvector extension for semantic search
 create extension if not exists vector;
 
--- 2. Create Businesses Table (Tenant Metadata & Settings)
-create table if not exists public.businesses (
+-- 3. Create Businesses Table (Tenant Metadata & Settings)
+create table public.businesses (
     business_id text primary key,
     business_name text not null,
     agent_name text not null default 'Kim',
@@ -20,22 +31,25 @@ create table if not exists public.businesses (
     created_at timestamptz not null default now()
 );
 
--- 3. Create Visitors Table (User Session Routing)
-create table if not exists public.visitors (
+-- 4. Create Visitors Table (Active Session Mapping)
+create table public.visitors (
     visitor_chat_id text primary key,
-    active_business_id text references public.businesses(business_id) on delete set null
+    active_business_id text references public.businesses(business_id) on delete cascade,
+    created_at timestamptz not null default now()
 );
 
--- 4. Create Admin Relay Table (Escalation Takeover States)
-create table if not exists public.admin_relay (
+-- 5. Create Admin Relay Table (Handoff State & Question Logging)
+create table public.admin_relay (
     visitor_chat_id text primary key,
     business_id text references public.businesses(business_id) on delete cascade,
     is_paused boolean not null default false,
     pending_question text
 );
 
--- 5. Create Knowledge Chunks Table (Unified Vector DB Chunks)
-create table if not exists public.knowledge_chunks (
+-- 6. Create Knowledge Chunks Table (Unified Vector DB Chunks)
+-- (No index defined on embedding because 3072 dimensions exceed pgvector index limits. 
+-- Scoping searches by business_id ensures sub-millisecond sequential scans).
+create table public.knowledge_chunks (
     id uuid primary key default gen_random_uuid(),
     business_id text references public.businesses(business_id) on delete cascade,
     content text not null,
@@ -44,23 +58,18 @@ create table if not exists public.knowledge_chunks (
     created_at timestamptz not null default now()
 );
 
-
-
--- 6. Create Escalations Cache Table (Fuzzy Q&A Resolved Records)
-create table if not exists public.escalations_cache (
+-- 7. Create Escalations Cache Table (Fuzzy Q&A Resolved Records)
+create table public.escalations_cache (
     id bigint generated always as identity primary key,
     business_id text references public.businesses(business_id) on delete cascade,
     question text not null,
     answer text not null,
-    timestamp timestamptz not null default now()
+    timestamp timestamptz not null default now(),
+    constraint unique_business_question unique (business_id, question)
 );
 
--- Ensure Q&A entries are unique per business
-create unique index if not exists escalations_cache_unique_idx 
-on public.escalations_cache (business_id, question);
-
--- 7. Create Crawl Jobs Table (Crawler Task Queue)
-create table if not exists public.crawl_jobs (
+-- 8. Create Crawl Jobs Table (Crawler Task Queue)
+create table public.crawl_jobs (
     id uuid primary key default gen_random_uuid(),
     business_id text references public.businesses(business_id) on delete cascade,
     website_url text not null,
@@ -70,9 +79,8 @@ create table if not exists public.crawl_jobs (
     updated_at timestamptz not null default now()
 );
 
-
--- 9. Create Business Load Table (Bulk Onboarding Staging)
-create table if not exists public.business_load (
+-- 9. Create Business Load Table (Bulk Onboarding Staging Queue)
+create table public.business_load (
     id uuid primary key default gen_random_uuid(),
     business_id text not null,
     business_name text not null,
@@ -86,12 +94,12 @@ create table if not exists public.business_load (
     processed_at timestamptz
 );
 
--- 10. Create Business Load Trigger Function (Staging Ingestion)
+-- 10. Create Business Ingestion Function
 create or replace function public.process_business_load_row()
 returns trigger as $$
 begin
     if new.status = 'pending' then
-        -- A. Upsert into the main businesses table
+        -- A. Upsert business profile metadata
         insert into public.businesses (
             business_id, 
             business_name, 
@@ -115,11 +123,11 @@ begin
             business_timezone = excluded.business_timezone,
             admin_chat_id = coalesce(excluded.admin_chat_id, public.businesses.admin_chat_id);
 
-        -- B. Automatically queue a crawl job
+        -- B. Automatically append task to crawler queue
         insert into public.crawl_jobs (business_id, website_url, status)
         values (new.business_id, new.website_url, 'pending');
 
-        -- C. Update the staging row status
+        -- C. Terminate staging row status to completed
         new.status := 'completed';
         new.processed_at := now();
     end if;
@@ -127,8 +135,7 @@ begin
 end;
 $$ language plpgsql;
 
--- Bind trigger to run before insert on business_load
-drop trigger if exists trigger_process_business_load on public.business_load;
+-- 11. Bind Trigger to Business Load Table
 create trigger trigger_process_business_load
 before insert on public.business_load
 for each row
