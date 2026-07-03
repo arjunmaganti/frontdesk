@@ -46,8 +46,26 @@ def classify_intent_node(state: AgentState) -> dict:
 def casual_reply_node(state: AgentState) -> dict:
     llm = get_llm(temperature=0.5)
     
+    # Determine the time of day dynamically
+    from datetime import datetime
+    hour = datetime.now().hour
+    if hour < 12:
+        time_of_day = "morning"
+    elif hour < 17:
+        time_of_day = "afternoon"
+    else:
+        time_of_day = "evening"
+        
+    business_name = getattr(config, "BUSINESS_NAME", "our business")
+    
+    # Format the dynamic system prompt
+    formatted_system_prompt = prompts.CHITCHAT_PROMPT.format(
+        business_name=business_name,
+        time_of_day=time_of_day
+    )
+    
     # We combine the system prompt with the messages history
-    messages_payload = [SystemMessage(content=prompts.CHITCHAT_PROMPT)] + state["messages"]
+    messages_payload = [SystemMessage(content=formatted_system_prompt)] + state["messages"]
     response = llm.invoke(messages_payload)
     return {"messages": [response]}
 

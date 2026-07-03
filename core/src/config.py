@@ -14,6 +14,7 @@ if GEMINI_API_KEY:
     os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
 
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gemini-1.5-flash")
+BUSINESS_NAME = os.getenv("BUSINESS_NAME", "our business")
 
 # Guardrails & Limits
 DAILY_MESSAGE_CAP = int(os.getenv("DAILY_MESSAGE_CAP", "200"))
