@@ -1,5 +1,6 @@
 import sqlite3
 import time
+import difflib
 from datetime import datetime
 import src.config as config
 
@@ -37,7 +38,24 @@ def init_db(db_path=DB_PATH):
             CREATE TABLE IF NOT EXISTS admin_relay (
                 visitor_chat_id TEXT PRIMARY KEY,
                 is_paused INTEGER DEFAULT 0,
-                active_reply_to TEXT
+                active_reply_to TEXT,
+                pending_question TEXT
+            )
+        """)
+        
+        # Migrating existing databases to include the pending_question column if missing
+        try:
+            cursor.execute("ALTER TABLE admin_relay ADD COLUMN pending_question TEXT")
+        except sqlite3.OperationalError:
+            pass # Column already exists
+            
+        # 4. Cache resolved QA for future escalations
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS escalations_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                question TEXT UNIQUE,
+                answer TEXT,
+                timestamp REAL
             )
         """)
         
@@ -146,3 +164,78 @@ def clear_active_visitor(db_path=DB_PATH):
         cursor = conn.cursor()
         cursor.execute("UPDATE admin_relay SET active_reply_to = NULL")
         conn.commit()
+
+def save_pending_question(visitor_chat_id: str, question: str, db_path=DB_PATH):
+    """Saves the visitor's latest unanswered question to their session state."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO admin_relay (visitor_chat_id, pending_question)
+            VALUES (?, ?)
+            ON CONFLICT(visitor_chat_id) DO UPDATE SET pending_question = ?
+        """, (visitor_chat_id, question, question))
+        conn.commit()
+
+def get_pending_question(visitor_chat_id: str, db_path=DB_PATH) -> str:
+    """Gets the visitor's pending unanswered question."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT pending_question FROM admin_relay WHERE visitor_chat_id = ?", (visitor_chat_id,))
+        row = cursor.fetchone()
+        if row:
+            return row["pending_question"]
+        return None
+
+def save_resolved_qa(question: str, answer: str, db_path=DB_PATH):
+    """Saves a resolved Q&A pair into the escalations cache."""
+    if not question or not answer:
+        return
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO escalations_cache (question, answer, timestamp)
+            VALUES (?, ?, ?)
+            ON CONFLICT(question) DO UPDATE SET answer = ?, timestamp = ?
+        """, (question, answer, time.time(), answer, time.time()))
+        conn.commit()
+
+def find_cached_answer(query: str, db_path=DB_PATH) -> str:
+    """Fuzzy searches for a previously resolved QA pair in SQLite."""
+    if not query:
+        return None
+        
+    normalized_query = query.strip().lower()
+    
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT question, answer FROM escalations_cache")
+        rows = cursor.fetchall()
+        
+        best_ratio = 0.0
+        best_answer = None
+        
+        for row in rows:
+            q = row["question"].strip().lower()
+            
+            # 1. Exact match
+            if normalized_query == q:
+                return row["answer"]
+                
+            # 2. Fuzzy match ratio
+            ratio = difflib.SequenceMatcher(None, normalized_query, q).ratio()
+            if ratio > 0.85:
+                return row["answer"]
+                
+            # 3. Fallback to word-overlap checks
+            q_words = set(q.split())
+            query_words = set(normalized_query.split())
+            if len(q_words) > 0 and len(query_words) > 0:
+                overlap = len(q_words.intersection(query_words)) / max(len(q_words), len(query_words))
+                if overlap > 0.80 and ratio > best_ratio:
+                    best_ratio = ratio
+                    best_answer = row["answer"]
+                    
+        if best_ratio > 0.70:
+            return best_answer
+            
+    return None

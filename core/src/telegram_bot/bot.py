@@ -180,6 +180,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
             
+            # Capture this message as the answer to the pending question before relaying!
+            pending_question = session.get_pending_question(active_visitor_id)
+            if pending_question:
+                session.save_resolved_qa(pending_question, user_message)
+                session.save_pending_question(active_visitor_id, None) # Clear pending
+                
             # Relay the admin's message directly to the visitor
             try:
                 await context.bot.send_message(
@@ -205,6 +211,64 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if session.is_visitor_paused(chat_id):
         # We silently ignore or log the message so the AI doesn't double-reply
         logger.info(f"Visitor {chat_id} messaged, but AI is paused. Waiting for admin.")
+        return
+
+    # Check if we have a cached answer from a previous resolved escalation!
+    cached_answer = session.find_cached_answer(user_message)
+    if cached_answer:
+        logger.info(f"⚡ [Cache Hit] Found resolved answer for: \"{user_message}\"")
+        
+        # B. Guardrail 1: Rate Limiter (Spam Protection)
+        if session.check_rate_limit(chat_id):
+            await update.message.reply_text("⚠️ You are sending messages too quickly. Please wait a moment.")
+            return
+
+        # C. Guardrail 2: Daily Budget Cap check
+        if session.check_daily_cap():
+            await update.message.reply_text(
+                "Our automated assistant has reached its maximum query limit for today.\n"
+                "If you need immediate assistance, please call our front desk directly."
+            )
+            return
+
+        # Increment usage count
+        session.increment_daily_usage()
+
+        # Post initial "Thinking..." status card
+        status_msg = await update.message.reply_text("🧠 <i>Thinking...</i>", parse_mode="HTML")
+
+        # Parse and format response into HTML cards
+        cards = format_for_telegram(cached_answer)
+        
+        # Determine if we should append buttons based on content keywords
+        buttons = []
+        response_lower = cached_answer.lower()
+        if getattr(config, "BUSINESS_PHONE", "") and any(kw in response_lower for kw in ["phone", "call", "tel", "contact", "reach us", "number", "408-"]):
+            buttons.append(InlineKeyboardButton("📞 Call Us Now", url=f"tel:{config.BUSINESS_PHONE}"))
+        if getattr(config, "MAP_URL", "") and any(kw in response_lower for kw in ["location", "located", "address", "find us", "where", "saratoga", "map"]):
+            buttons.append(InlineKeyboardButton("📍 View Map", url=config.MAP_URL))
+        markup = InlineKeyboardMarkup([buttons]) if buttons else None
+
+        # Edit the "Thinking..." status message with the first card
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg.message_id,
+            text=cards[0],
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=markup if len(cards) == 1 else None
+        )
+        
+        # Send subsequent cards as new message bubbles
+        for i, card in enumerate(cards[1:]):
+            is_last = (i == len(cards[1:]) - 1)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=card,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=markup if is_last else None
+            )
         return
 
     # B. Guardrail 1: Rate Limiter (Spam Protection)
@@ -249,6 +313,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if intent == "handoff" or is_fallback:
             # 1. Pause the AI
             session.set_visitor_paused(chat_id, True)
+            
+            # Save the pending question for caching when resolved
+            session.save_pending_question(chat_id, user_message)
             
             # 2. Alert the Admin with inline buttons
             keyboard = [
