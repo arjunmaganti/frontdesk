@@ -242,8 +242,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             final_response = str(content_val)
         intent = result.get("intent", "kb_query")
         
-        # E. Handle Handoff Action
-        if intent == "handoff":
+        # E. Handle Handoff Action (either classified as handoff, or RAG returned the fallback escalation message)
+        fallback_msg = "I couldn't find the answer to that in our files. Let me escalate this to our staff to help you directly."
+        is_fallback = (fallback_msg in final_response)
+        
+        if intent == "handoff" or is_fallback:
             # 1. Pause the AI
             session.set_visitor_paused(chat_id, True)
             
@@ -258,11 +261,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await context.bot.send_message(
                 chat_id=config.ADMIN_CHAT_ID,
-                text=f"🚨 **Handoff Escalation Triggered!**\n\n"
-                     f"👤 **Visitor Chat ID:** `{chat_id}`\n"
-                     f"💬 **Visitor Message:** \"{user_message}\"\n\n"
+                text=f"🚨 <b>Handoff Escalation Triggered!</b>\n\n"
+                     f"👤 <b>Visitor Chat ID:</b> <code>{chat_id}</code>\n"
+                     f"💬 <b>Visitor Message:</b> \"{user_message}\"\n\n"
                      f"AI bot has been muted. Choose an option below:",
-                reply_markup=reply_markup
+                reply_markup=reply_markup,
+                parse_mode="HTML"
             )
             
         # Parse and format response into HTML cards
