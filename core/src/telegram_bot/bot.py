@@ -36,13 +36,23 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         welcome_text = (
             f"👋 Good {time_of_day}! Welcome to <b>{business_name}</b>.\n\n"
-            f"I am <b>{agent_name}</b>, your virtual concierge. Here is what I can help you with:\n\n"
+            f"I am <b>{agent_name}</b>, your friendly virtual concierge. I am here to make your visit smooth and answer any questions you might have!\n\n"
+            f"Here is what I can do for you:\n"
             f"🔹 Answer questions about our services and policies\n"
-            f"🔹 Provide contact info and booking details\n"
-            f"🔹 Escalate and connect you to our staff if you need direct help\n\n"
-            f"What can I assist you with today? 😊"
+            f"🔹 Provide location and contact details\n"
+            f"🔹 Instantly connect you to our staff if you need direct help\n\n"
+            f"How can I assist you today? 😊"
         )
-        await update.message.reply_text(welcome_text, parse_mode="HTML")
+        
+        # Setup welcome markup with Call and Map buttons
+        welcome_buttons = []
+        if getattr(config, "BUSINESS_PHONE", ""):
+            welcome_buttons.append(InlineKeyboardButton("📞 Call Us", url=f"tel:{config.BUSINESS_PHONE}"))
+        if getattr(config, "MAP_URL", ""):
+            welcome_buttons.append(InlineKeyboardButton("📍 View Map", url=config.MAP_URL))
+            
+        welcome_markup = InlineKeyboardMarkup([welcome_buttons]) if welcome_buttons else None
+        await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=welcome_markup)
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processes button clicks from the admin."""
@@ -260,22 +270,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"📤 [Outgoing Bot Response] Chat ID: {chat_id} | Intent: {intent} | Response: \"{final_response}\"")
         
+        # Determine if we should append buttons based on content keywords
+        buttons = []
+        response_lower = final_response.lower()
+        
+        # Phone button if config has phone and response mentions contact/phone/call/tel
+        if getattr(config, "BUSINESS_PHONE", "") and any(kw in response_lower for kw in ["phone", "call", "tel", "contact", "reach us", "number", "408-"]):
+            buttons.append(InlineKeyboardButton("📞 Call Us Now", url=f"tel:{config.BUSINESS_PHONE}"))
+            
+        # Map button if config has map URL and response mentions location/map/address
+        if getattr(config, "MAP_URL", "") and any(kw in response_lower for kw in ["location", "located", "address", "find us", "where", "saratoga", "map"]):
+            buttons.append(InlineKeyboardButton("📍 View Map", url=config.MAP_URL))
+            
+        markup = InlineKeyboardMarkup([buttons]) if buttons else None
+        
         # Edit the "Thinking..." status message with the first card
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=status_msg.message_id,
             text=cards[0],
             parse_mode="HTML",
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=markup if len(cards) == 1 else None
         )
         
         # Send subsequent cards as new message bubbles
-        for card in cards[1:]:
+        for i, card in enumerate(cards[1:]):
+            is_last = (i == len(cards[1:]) - 1)
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=card,
                 parse_mode="HTML",
-                disable_web_page_preview=True
+                disable_web_page_preview=True,
+                reply_markup=markup if is_last else None
             )
 
     except Exception as e:
