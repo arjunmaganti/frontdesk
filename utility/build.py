@@ -19,7 +19,7 @@ def compile_index(src_dir, temp_index_dir):
         from langchain_community.document_loaders import DirectoryLoader, TextLoader
         from langchain_text_splitters import RecursiveCharacterTextSplitter
         from langchain_community.vectorstores import FAISS
-        from langchain_google_genai import GoogleGenAIEmbeddings
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
     except ImportError:
         print("Error: Required libraries not installed. Please run: pip install -r requirements.txt")
         sys.exit(1)
@@ -37,7 +37,7 @@ def compile_index(src_dir, temp_index_dir):
     print(f"Generated {len(chunks)} text chunks.")
 
     print("Generating vector embeddings and building FAISS index...")
-    embeddings = GoogleGenAIEmbeddings(model="models/embedding-001")
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     db = FAISS.from_documents(chunks, embeddings)
     
     os.makedirs(temp_index_dir, exist_ok=True)
