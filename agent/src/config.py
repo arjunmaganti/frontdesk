@@ -34,7 +34,5 @@ USER_RATE_WINDOW = int(os.getenv("USER_RATE_WINDOW", "60"))
 def validate_config():
     if not TELEGRAM_BOT_TOKEN:
         raise ValueError("Config Error: TELEGRAM_BOT_TOKEN must be set in .env")
-    if not ADMIN_CHAT_ID:
-        raise ValueError("Config Error: ADMIN_CHAT_ID must be set in .env")
     if not os.environ.get("GOOGLE_API_KEY"):
         raise ValueError("Config Error: GEMINI_API_KEY (or GOOGLE_API_KEY) must be set in .env")
