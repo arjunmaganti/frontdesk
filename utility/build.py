@@ -5,12 +5,136 @@ import argparse
 import shutil
 import tempfile
 import zipfile
+import urllib.parse
+import json
 from dotenv import load_dotenv
 
 try:
     from utility.crawl import crawl_site
 except ImportError:
     from crawl import crawl_site
+
+def extract_contact_info_from_md_files(md_dir: str, gemini_key: str) -> dict:
+    """Reads markdown files, sends content to Gemini, and extracts phone and address."""
+    combined_content = ""
+    md_files = [f for f in os.listdir(md_dir) if f.endswith(".md")]
+    
+    # Sort files to prioritize contact or about pages
+    priority_files = []
+    other_files = []
+    for f in md_files:
+        if "contact" in f.lower() or "about" in f.lower() or "index" in f.lower():
+            priority_files.append(f)
+        else:
+            other_files.append(f)
+            
+    for f in priority_files + other_files:
+        file_path = os.path.join(md_dir, f)
+        try:
+            with open(file_path, "r", encoding="utf-8") as file:
+                combined_content += f"\n\n--- FILE: {f} ---\n" + file.read()
+        except Exception:
+            pass
+            
+    if len(combined_content) > 20000:
+        combined_content = combined_content[:20000]
+        
+    if not combined_content.strip():
+        return {}
+        
+    print("🧠 Analyzing crawled web pages with Gemini to extract business coordinates (Phone, Address)...")
+    
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_core.messages import SystemMessage, HumanMessage
+        
+        model_name = os.getenv("LLM_MODEL_NAME", "gemini-flash-latest")
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=gemini_key,
+            temperature=0.0
+        )
+        
+        system_prompt = (
+            "Analyze the business website scrapings below and extract their contact coordinates:\n"
+            "1. The business phone number. Format it as international digits: +1XXXXXXXXXX (e.g., +14082105851). "
+            "If it is a local USA number like 408-210-5851, format it as +14082105851.\n"
+            "2. The physical street address of the salon/business.\n\n"
+            "You MUST respond ONLY with a raw JSON object (no markdown, no backticks, no wrap, no extra text) in this exact schema:\n"
+            '{\n  "phone": "+1XXXXXXXXXX",\n  "address": "Street Address, City, State ZIP"\n}'
+        )
+        
+        response = llm.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=combined_content)
+        ])
+        
+        content_val = response.content
+        if isinstance(content_val, list):
+            resp_text = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in content_val])
+        else:
+            resp_text = str(content_val)
+        resp_text = resp_text.strip()
+        if resp_text.startswith("```"):
+            lines = resp_text.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines[-1].startswith("```"):
+                lines = lines[:-1]
+            resp_text = "\n".join(lines).strip()
+            
+        data = json.loads(resp_text)
+        return data
+    except Exception as e:
+        print(f"⚠️ Failed to extract coordinates via Gemini: {e}")
+        return {}
+
+def update_env_file(env_path: str, phone: str, address: str):
+    """Updates the .env file with the extracted coordinates, preserving all other keys."""
+    if not os.path.exists(env_path):
+        return
+        
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            
+        new_lines = []
+        updated_keys = set()
+        
+        phone_val = f'"{phone}"' if phone else '""'
+        address_val = f'"{address}"' if address else '""'
+        map_url_val = '""'
+        if address:
+            map_url_val = f'"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(address)}"'
+            
+        for line in lines:
+            line_stripped = line.strip()
+            if line_stripped.startswith("BUSINESS_PHONE="):
+                new_lines.append(f"BUSINESS_PHONE={phone_val}\n")
+                updated_keys.add("BUSINESS_PHONE")
+            elif line_stripped.startswith("BUSINESS_ADDRESS="):
+                new_lines.append(f"BUSINESS_ADDRESS={address_val}\n")
+                updated_keys.add("BUSINESS_ADDRESS")
+            elif line_stripped.startswith("MAP_URL="):
+                new_lines.append(f"MAP_URL={map_url_val}\n")
+                updated_keys.add("MAP_URL")
+            else:
+                new_lines.append(line)
+                
+        # Append keys if they were not already in the file
+        if "BUSINESS_PHONE" not in updated_keys and phone:
+            new_lines.append(f"BUSINESS_PHONE={phone_val}\n")
+        if "BUSINESS_ADDRESS" not in updated_keys and address:
+            new_lines.append(f"BUSINESS_ADDRESS={address_val}\n")
+        if "MAP_URL" not in updated_keys and address:
+            new_lines.append(f"MAP_URL={map_url_val}\n")
+            
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+            
+        print("💾 Automatically synchronized .env coordinates with crawled website contact page!")
+    except Exception as e:
+        print(f"⚠️ Failed to update .env file: {e}")
 
 def compile_index(src_dir, temp_index_dir):
     """Loads markdown files from src_dir, runs embeddings, and saves FAISS index to temp_index_dir."""
@@ -86,6 +210,15 @@ def build_package(src_dir, out_zip):
         print(f"\n🕸️ WEBSITE_URL detected inside .env: {website_url}")
         print("Running web crawler to refresh policy documents before compiling index...")
         crawl_site(website_url, src_dir, max_pages=15, max_depth=2)
+        
+        # Synchronize .env coordinates by extracting from crawl results
+        extracted = extract_contact_info_from_md_files(src_dir, gemini_key)
+        phone = extracted.get("phone")
+        address = extracted.get("address")
+        if phone or address:
+            update_env_file(src_env, phone, address)
+            # Re-load environment variables to ensure the updated values are used for compilation
+            load_dotenv(src_env, override=True)
 
     # 3. Create a temporary folder to assemble the deployable bundle
     with tempfile.TemporaryDirectory() as temp_dir:
