@@ -7,3 +7,4 @@ faiss-cpu>=1.8.0
 python-telegram-bot>=20.0
 python-dotenv>=1.0.0
 typing-extensions>=4.0.0
+beautifulsoup4>=4.12.0

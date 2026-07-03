@@ -40,6 +40,13 @@ This generates a template folder containing:
 * `.env`: Configuration keys (Telegram token, Owner ID, Daily Cap, OpenAI API key).
 * `visitor_policy.md` / `faq.md`: Sample Markdown documents.
 
+### Step 2.5: Auto-Generate Markdown via Crawling (Optional)
+If the business already has a public website, you can crawl it to auto-generate your Markdown policy files instead of writing them manually:
+```bash
+.venv/bin/python utility/crawl.py --url https://example-salon.com --out /Users/username/desktop/haircuts_config/
+```
+This recursively downloads body text blocks and filters out noise like headers and footers.
+
 ### Step 3: Populate Configs & Data
 1. Open the generated `/Users/username/desktop/haircuts_config/.env` and paste your API keys.
 2. Edit or add any custom Markdown (`.md`) files inside the folder representing your client's business hours, policies, or procedures.

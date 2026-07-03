@@ -72,7 +72,8 @@ frontdesk/
 │           ├── __init__.py
 │           └── service.py      # Loads local FAISS vectors and queries them
 └── utility/                    # Compiler utilities
-    └── build.py                # Compiles client folder and zips a deployable package
+    ├── build.py                # Compiles client folder and zips a deployable package
+    └── crawl.py                # Crawls website and downloads page content to MD files
 ```
 
 ---
@@ -105,6 +106,13 @@ python3 utility/build.py --src /path/to/haircuts_workspace --out dist/deploy_hai
    * The client's specific `.env` file.
    * The compiled FAISS files placed inside an `index/` directory.
 4. **Generate ZIP**: Compresses the staging directory into the output ZIP file, leaving out all developer scripts and raw Markdown documents.
+
+### C. Auto-Generating Data from a Website (`utility/crawl.py`)
+If the business already has an existing public website, developers can auto-generate the markdown files by running the crawler:
+```bash
+python3 utility/crawl.py --url https://example-salon.com --out /path/to/workspace
+```
+This crawls the site, strips header/footer menus, and downloads content as `.md` files.
 
 ---
 
@@ -160,10 +168,11 @@ To protect business owners from runaway API costs and spam, the Telegram Bot Han
   5. Setup the `CallbackQueryHandler` in the Telegram Bot to process click actions for `[💬 Reply]` and `[✅ Resolve]` buttons.
   6. Implement the local Daily Message Cap and Rate Limiting database checks.
 
-### 🧑‍💻 Developer B: Search Service & Build Packaging Script
-* **Deliverables**: `core/src/search/*`, `utility/build.py`.
+### 🧑‍💻 Developer B: Search Service, Build & Crawl Scripts
+* **Deliverables**: `core/src/search/*`, `utility/build.py`, `utility/crawl.py`.
 * **Key Tasks**:
   1. Write `utility/build.py` to automate Markdown parsing, FAISS compilation, file staging, and standalone ZIP packaging.
+  2. Write `utility/crawl.py` to recursively parse website HTML and convert page body content into clean Markdown files.
   2. Write `core/src/search/service.py` to load the compiled FAISS vector index from the local `/index` folder in RAM and handle query queries.
   3. Set up mock business files locally to verify the build script output.
 
