@@ -561,6 +561,93 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
+async def getqr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    
+    # 1. Authorize sender: must be a registered admin in the system
+    if not session.is_authorized_admin(chat_id):
+        await update.message.reply_text(
+            "⚠️ <b>Access Denied</b>\nThis command is only available to registered salon administrators.",
+            parse_mode="HTML"
+        )
+        return
+        
+    # 2. Check arguments
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ <b>Usage:</b>\n<code>/getqr [phone_number]</code>\n\nExample: <code>/getqr +14082105851</code>",
+            parse_mode="HTML"
+        )
+        return
+        
+    search_phone = context.args[0]
+    search_digits = "".join(filter(str.isdigit, search_phone))
+    if not search_digits:
+        await update.message.reply_text("⚠️ Please enter a valid phone number with digits.", parse_mode="HTML")
+        return
+        
+    # 3. Query matching business by phone digits match
+    conn = get_pg_connection()
+    matching_biz = None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT business_id, business_name, flyer_url, owner_qr_url, business_phone FROM public.businesses")
+            rows = cur.fetchall()
+            for row in rows:
+                db_phone = row[4]
+                if db_phone:
+                    db_digits = "".join(filter(str.isdigit, db_phone))
+                    # Check if the search term matches suffix or prefix of the database record
+                    if db_digits.endswith(search_digits) or search_digits.endswith(db_digits[-10:] if len(db_digits) >= 10 else db_digits):
+                        matching_biz = {
+                            "business_id": row[0],
+                            "business_name": row[1],
+                            "flyer_url": row[2],
+                            "owner_qr_url": row[3],
+                            "business_phone": db_phone
+                        }
+                        break
+    finally:
+        conn.close()
+        
+    if not matching_biz:
+        await update.message.reply_text(f"🔍 No salon found matching phone: <code>{search_phone}</code>", parse_mode="HTML")
+        return
+        
+    # 4. Reply with matching business details
+    biz_name = matching_biz["business_name"]
+    flyer_url = matching_biz["flyer_url"]
+    owner_qr_url = matching_biz["owner_qr_url"]
+    
+    await update.message.reply_text(
+        f"🔍 <b>Match Found: {biz_name}</b>\n"
+        f"📞 Registered Phone: <code>{matching_biz['business_phone']}</code>\n\n"
+        f"I am sending your Customer Flyer PDF and Owner Activation QR Code directly below...",
+        parse_mode="HTML"
+    )
+    
+    # Send Owner Activation QR Code image if populated
+    if owner_qr_url:
+        try:
+            await update.message.reply_photo(
+                photo=owner_qr_url,
+                caption=f"👑 <b>Owner Activation QR</b>\nLink: <code>t.me/Dmhaircarebot?start=a_{matching_biz['business_id']}</code>",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ Failed to send owner QR image: {e}")
+            
+    # Send Customer Printable Flyer PDF if populated
+    if flyer_url:
+        try:
+            await update.message.reply_document(
+                document=flyer_url,
+                caption=f"📄 <b>Print-Ready Customer Flyer</b>\nScan QR to chat with AI Receptionist.",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ Failed to send Customer Flyer PDF: {e}")
+
 def build_bot_app():
     """Initializes the python-telegram-bot application."""
     # Ensure config variables are set
@@ -574,6 +661,7 @@ def build_bot_app():
     # Add Command & Message handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("settings", settings_command))
+    app.add_handler(CommandHandler("getqr", getqr_command))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     

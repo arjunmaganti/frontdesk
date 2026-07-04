@@ -331,3 +331,13 @@ def find_cached_answer(business_id: str, query: str) -> str:
         return None
     finally:
         conn.close()
+
+def is_authorized_admin(chat_id: str) -> bool:
+    """Checks if the given Telegram chat_id belongs to any registered business administrator in the database."""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM public.businesses WHERE admin_chat_id = %s LIMIT 1", (chat_id,))
+            return cur.fetchone() is not None
+    finally:
+        conn.close()
