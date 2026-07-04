@@ -215,7 +215,7 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
                 
             # F. Generate Branded PDF Flyer automatically
             try:
-                from scripts.generate_flyers import generate_all_flyers
+                from utility.generate_flyers import generate_all_flyers
                 generate_all_flyers(specific_id=business_id)
                 logger.info(f"📄 Dynamically generated print-ready PDF flyer for {business_id}.")
             except Exception as pdf_err:
