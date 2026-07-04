@@ -30,7 +30,13 @@ def classify_intent_node(state: AgentState) -> dict:
         HumanMessage(content=user_query)
     ])
     
-    raw_intent = response.content.strip().lower()
+    content_val = response.content
+    if isinstance(content_val, list):
+        resp_text = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in content_val])
+    else:
+        resp_text = str(content_val)
+        
+    raw_intent = resp_text.strip().lower()
     
     if "handoff" in raw_intent:
         intent = "handoff"
