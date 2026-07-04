@@ -22,6 +22,25 @@ load_dotenv(".env")
 
 from src.db import get_pg_connection
 
+def get_bot_username() -> str:
+    bot_name = os.getenv("TELEGRAM_BOT_NAME")
+    if bot_name and bot_name.strip():
+        return bot_name.strip()
+        
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token or "your_test_bot_token" in token:
+        return "Dmhaircarebot"
+    try:
+        import requests
+        resp = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=3)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("ok"):
+                return data["result"].get("username", "Dmhaircarebot")
+    except Exception:
+        pass
+    return "Dmhaircarebot"
+
 def generate_qr_code(url: str) -> str:
     """Generates a high-quality QR code image and saves it to a temporary file."""
     qr = qrcode.QRCode(
@@ -108,7 +127,7 @@ def draw_flyer_pdf(output_path: str, biz_data: dict):
     # 6. QR Code Card Block (Centered Card containing QR Code)
     card_w, card_h = 240, 240
     card_x = (width - card_w) / 2.0
-    card_y = height - 6.6 * inch
+    card_y = height - 6.8 * inch # Shifted down by 0.2 inch to prevent text overlap
     
     # Shadow rect
     c.setFillColor(colors.HexColor("#F1EDE6"))
@@ -121,10 +140,11 @@ def draw_flyer_pdf(output_path: str, biz_data: dict):
     c.roundRect(card_x, card_y, card_w, card_h, 12, fill=1, stroke=1)
     
     # Generate and draw QR Code
-    telegram_url = f"https://t.me/Dmhaircarebot?start=v_{business_id}"
+    bot_username = get_bot_username()
+    telegram_url = f"https://t.me/{bot_username}?start=v_{business_id}"
     qr_img_path = generate_qr_code(telegram_url)
     
-    c.drawImage(qr_img_path, card_x + 20, card_y + 35, width=200, height=200)
+    c.drawImage(qr_img_path, card_x + 30, card_y + 48, width=180, height=180) # Centered QR Code with balanced padding
     
     # Cleanup temp image
     try:
@@ -135,7 +155,7 @@ def draw_flyer_pdf(output_path: str, biz_data: dict):
     # Card CTA Text
     c.setFillColor(charcoal)
     c.setFont("Helvetica-Bold", 10)
-    c.drawCentredString(width / 2.0, card_y + 15, "👉 SCAN WITH YOUR PHONE CAMERA 💬")
+    c.drawCentredString(width / 2.0, card_y + 18, "👉 SCAN WITH YOUR PHONE CAMERA 💬")
     
     # 7. Instructions / Steps Block (Three columns at the bottom)
     inst_y = card_y - 1.2 * inch
@@ -256,7 +276,8 @@ def generate_all_flyers(specific_id: str = None):
                 owner_filename = f"owner_qr_{business_id}.png"
                 owner_qr_path = os.path.join(owner_qr_dir, owner_filename)
                 
-                activation_url = f"https://t.me/Dmhaircarebot?start=a_{business_id}"
+                bot_username = get_bot_username()
+                activation_url = f"https://t.me/{bot_username}?start=a_{business_id}"
                 qr = qrcode.QRCode(version=1, box_size=10, border=4)
                 qr.add_data(activation_url)
                 qr.make(fit=True)

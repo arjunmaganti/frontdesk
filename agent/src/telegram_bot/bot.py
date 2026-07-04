@@ -224,7 +224,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         # Generate QR code for customer link in memory
         import io
         import qrcode
-        visitor_url = f"https://t.me/Dmhaircarebot?start=v_{business_id}"
+        bot_username = os.getenv("TELEGRAM_BOT_NAME") or context.bot.username or "Dmhaircarebot"
+        visitor_url = f"https://t.me/{bot_username}?start=v_{business_id}"
         
         qr = qrcode.QRCode(version=1, box_size=10, border=4)
         qr.add_data(visitor_url)
@@ -665,9 +666,10 @@ async def getqr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Send Owner Activation QR Code image if populated
     if owner_qr_url:
         try:
+            bot_username = os.getenv("TELEGRAM_BOT_NAME") or context.bot.username or "Dmhaircarebot"
             await update.message.reply_photo(
                 photo=owner_qr_url,
-                caption=f"👑 <b>Owner Activation QR</b>\nLink: <code>t.me/Dmhaircarebot?start=a_{matching_biz['business_id']}</code>",
+                caption=f"👑 <b>Owner Activation QR</b>\nLink: <code>t.me/{bot_username}?start=a_{matching_biz['business_id']}</code>",
                 parse_mode="HTML"
             )
         except Exception as e:

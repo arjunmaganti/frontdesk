@@ -115,15 +115,20 @@ def get_business_config(business_id: str) -> dict:
             )
             row = cur.fetchone()
             if row:
+                address = row[4]
+                map_url = row[6]
+                if not map_url and address:
+                    import urllib.parse
+                    map_url = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(address)}"
                 return {
                     "business_id": business_id,
                     "business_name": row[0],
                     "agent_name": row[1],
                     "website_url": row[2],
                     "business_phone": row[3],
-                    "business_address": row[4],
+                    "business_address": address,
                     "business_email": row[5],
-                    "map_url": row[6],
+                    "map_url": map_url,
                     "business_timezone": row[7],
                     "admin_chat_id": row[8],
                     "active_visitor_chat_id": row[9],

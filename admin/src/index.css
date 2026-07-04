@@ -1,17 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --bg-main: #0B0F19;
-  --bg-card: rgba(17, 24, 39, 0.7);
-  --border-card: rgba(255, 255, 255, 0.06);
+  --bg-main: #06090e;
+  --bg-card: rgba(13, 20, 35, 0.65);
+  --border-card: rgba(0, 210, 255, 0.08);
   --text-main: #F3F4F6;
   --text-mute: #9CA3AF;
   
-  --primary: #6366F1;
-  --primary-glow: rgba(99, 102, 241, 0.15);
+  --primary: #00D2FF;
+  --primary-glow: rgba(0, 210, 255, 0.12);
   
-  --gold: #C5A880;
-  --gold-glow: rgba(197, 168, 128, 0.15);
+  --gold: #00D2FF;
+  --gold-glow: rgba(0, 210, 255, 0.12);
   
   --emerald: #10B981;
   --rose: #EF4444;
@@ -39,8 +39,8 @@ body {
 }
 
 .sidebar {
-  width: 260px;
-  background-color: rgba(17, 24, 39, 0.95);
+  width: 280px;
+  background-color: #0c1424;
   border-right: 1px solid var(--border-card);
   padding: 2rem 1.5rem;
   display: flex;
@@ -50,15 +50,16 @@ body {
 
 .brand-header {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
+  text-align: center;
 }
 
 .brand-logo {
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--text-main);
-  background: linear-gradient(135deg, var(--primary), var(--gold));
+  background: linear-gradient(135deg, var(--primary), #0066EB);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -86,7 +87,7 @@ body {
 }
 
 .nav-btn:hover {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: rgba(0, 210, 255, 0.04);
   color: var(--text-main);
 }
 
@@ -147,7 +148,8 @@ body {
 
 .metric-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(0, 210, 255, 0.2);
+  box-shadow: 0 8px 30px rgba(0, 210, 255, 0.04);
 }
 
 .metric-info {
@@ -178,8 +180,8 @@ body {
   justify-content: center;
 }
 
-.metric-icon.indigo { background: rgba(99, 102, 241, 0.1); color: var(--primary); }
-.metric-icon.gold { background: rgba(197, 168, 128, 0.1); color: var(--gold); }
+.metric-icon.indigo { background: rgba(0, 210, 255, 0.1); color: var(--primary); }
+.metric-icon.gold { background: rgba(0, 102, 235, 0.1); color: #0066EB; }
 .metric-icon.emerald { background: rgba(16, 185, 129, 0.1); color: var(--emerald); }
 .metric-icon.rose { background: rgba(239, 68, 68, 0.1); color: var(--rose); }
 
@@ -266,7 +268,7 @@ input:focus, select:focus {
 }
 
 .submit-btn {
-  background: linear-gradient(135deg, var(--primary), #4f46e5);
+  background: linear-gradient(135deg, var(--primary), #0066EB);
   color: var(--text-main);
   border: none;
   padding: 0.95rem;
@@ -372,3 +374,33 @@ td {
   font-style: italic;
   color: var(--text-main);
 }
+
+/* Simulator Styles */
+.simulator-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.8fr;
+  gap: 2rem;
+}
+
+@media (max-width: 900px) {
+  .simulator-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dot-blink {
+  animation: dotBlink 1.4s infinite both;
+}
+
+@keyframes dotBlink {
+  0% {
+    opacity: .2;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: .2;
+  }
+}
+

@@ -3,7 +3,6 @@
 -- =====================================================================
 
 -- 1. Cascading cleanup of previous structures (for clean rebuilds)
-drop trigger if exists trigger_process_business_load on public.business_load cascade;
 drop function if exists public.process_business_load_row() cascade;
 drop table if exists public.business_load cascade;
 drop table if exists public.daily_usage cascade;
@@ -92,7 +91,7 @@ create table public.crawl_jobs (
 -- 10. Create Business Load Table (Bulk Onboarding Staging Queue with Optional Overrides)
 create table public.business_load (
     id uuid primary key default gen_random_uuid(),
-    business_id text not null,
+    business_id text, -- Nullable to allow database-level auto-generation
     business_name text not null,
     agent_name text not null default 'Kim',
     website_url text not null,
@@ -112,6 +111,19 @@ create table public.business_load (
 create or replace function public.process_business_load_row()
 returns trigger as $$
 begin
+    -- Auto-generate business_id (slug) if null or empty
+    if new.business_id is null or trim(new.business_id) = '' then
+        new.business_id := lower(trim(new.business_name));
+        new.business_id := regexp_replace(new.business_id, '[^a-z0-9\s-]', '', 'g');
+        new.business_id := regexp_replace(new.business_id, '[\s_]+', '-', 'g');
+        new.business_id := trim(both '-' from new.business_id);
+    end if;
+
+    -- Auto-generate map_url if empty but address is present
+    if (new.map_url is null or trim(new.map_url) = '') and new.business_address is not null and trim(new.business_address) != '' then
+        new.map_url := 'https://www.google.com/maps/search/?api=1&query=' || replace(trim(new.business_address), ' ', '+');
+    end if;
+
     if new.status = 'pending' then
         -- A. Upsert business profile metadata, transferring overrides if provided
         insert into public.businesses (

@@ -1,5 +1,5 @@
 # Stage 1: Build the React application
-FROM node:18-slim AS builder
+FROM node:22-slim AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install

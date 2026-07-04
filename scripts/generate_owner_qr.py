@@ -1,7 +1,25 @@
-import os
-import sys
-import argparse
-import qrcode
+import requests
+from dotenv import load_dotenv
+
+load_dotenv(".env")
+
+def get_bot_username() -> str:
+    bot_name = os.getenv("TELEGRAM_BOT_NAME")
+    if bot_name and bot_name.strip():
+        return bot_name.strip()
+        
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token or "your_test_bot_token" in token:
+        return "Dmhaircarebot"
+    try:
+        resp = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=3)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("ok"):
+                return data["result"].get("username", "Dmhaircarebot")
+    except Exception:
+        pass
+    return "Dmhaircarebot"
 
 def generate_owner_activation_qr(business_id: str):
     """Generates the onboarding activation QR code and link for the salon owner."""
@@ -9,7 +27,8 @@ def generate_owner_activation_qr(business_id: str):
     os.makedirs(output_dir, exist_ok=True)
     
     # 1. Construct Link
-    activation_url = f"https://t.me/Dmhaircarebot?start=a_{business_id}"
+    bot_username = get_bot_username()
+    activation_url = f"https://t.me/{bot_username}?start=a_{business_id}"
     
     # 2. Compile QR Code Image
     qr = qrcode.QRCode(
