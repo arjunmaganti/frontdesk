@@ -15,18 +15,43 @@ Instead of deploying a separate bot package per business, a single shared Telegr
 
 ---
 
-## 2. Admin Activation via Deep Linking
+## 2. Onboarding & Admin Binding Flow
 
-Since business profiles and crawling tasks are loaded in bulk directly into the database (via `business_load`), the bot does not need a conversational signup wizard. 
+Registration is designed to support mass bulk-onboarding from database staging scripts or operators.
 
-Instead, the admin/owner claims ownership of their pre-registered business using a simple deep link:
+```mermaid
+sequenceDiagram
+    participant Operator as Operator/Database
+    participant DB as Supabase PostgreSQL
+    participant Worker as Background Crawler
+    participant Storage as Supabase Storage
+    participant Bot as Telegram Bot
+    participant Owner as Salon Owner (Admin)
 
-### Admin Activation Flow
-1. **Link Generation**: When the business is staged, the system outputs an **Admin Activation Link**:
-   `https://t.me/your_bot?start=a_[business_id]`
-2. **Click & Start**: The business owner clicks the link on their mobile/desktop client, opening a thread with the bot, and taps **Start** (sending the command `/start a_[business_id]`).
-3. **Automatic Binding**: The bot intercepts the `a_` prefix, extracts the `business_id`, and writes the owner's Telegram `chat_id` to the `admin_chat_id` column of the corresponding row in the `businesses` table.
-4. **Completion Greeting**: The bot replies to confirm the setup: *"Greetings! You are now connected as the Admin of [Business Name]. You will receive customer escalations and chat alerts here."*
+    Operator->>DB: Insert business row into `business_load` (with optional contact overrides)
+    Note over DB: PostgreSQL Trigger `process_business_load_row` fires
+    DB->>DB: Upsert profile configuration into `businesses`
+    DB->>DB: Queue task into `crawl_jobs`
+    Worker->>DB: Consume pending job (Row locked: SKIP LOCKED)
+    Worker->>Worker: Run Crawl4AI browser + Gemini extraction
+    Worker->>DB: Write scraped data (COALESCE preserves pre-set overrides)
+    Worker->>Worker: Generate 3072-dim embeddings & write vector chunks
+    Worker->>Worker: Compile US Letter Marketing Flyer PDF with QR code
+    Worker->>Storage: Upload flyer to public bucket `flyers` (application/pdf)
+    Worker->>DB: Save flyer_url to `businesses`
+    Worker->>Bot: Dispatch Telegram Success notification
+    Bot->>Owner: Alert: "Crawl complete! Download PDF Flyer"
+    Owner->>Bot: Admin activation link: `/start a_[business_id]`
+    Bot->>DB: Save `admin_chat_id` (binds owner Telegram account)
+    Bot->>Owner: Welcome Msg with clickable "Download PDF Flyer" link
+```
+
+### Steps in the Flow:
+1. **Staging & Override Ingestion**: A new record is appended to the `business_load` table. It can optionally contain verified contact details (`business_phone`, `business_address`, `business_email`, `map_url`) to override website scraping.
+2. **Database Trigger Execution**: A before-insert trigger (`trigger_process_business_load`) programmatically maps and registers the profile into `businesses`, and adds a pending task to `crawl_jobs`.
+3. **Asynchronous Scraping**: The background worker runs Crawl4AI, queries Gemini for structured extraction, writes data back safely via `COALESCE` (never overwriting custom overrides), and generates vector chunks.
+4. **Flyer Generation & Storage Upload**: The worker draws a US Letter PDF flyer containing a Telegram chat QR code, uploads it to Supabase Storage, and saves the public URL.
+5. **Dynamic Ownership Binding**: The operator sends the activation QR code/link (`t.me/Dmhaircarebot?start=a_[business_id]`) to the salon owner. Clicking "Start" binds their account (`admin_chat_id`) and shows a welcome message containing their clickable PDF flyer.
 
 ---
 
@@ -40,11 +65,13 @@ Stores metadata for each business profile:
 * `business_name` (TEXT)
 * `agent_name` (TEXT) - Custom persona.
 * `website_url` (TEXT)
-* `business_phone` (TEXT, Nullable) - Auto-extracted by crawler.
-* `business_address` (TEXT, Nullable) - Auto-extracted by crawler.
-* `map_url` (TEXT, Nullable) - Auto-generated from extracted address.
+* `business_phone` (TEXT, Nullable) - Auto-extracted by crawler (or pre-set override).
+* `business_address` (TEXT, Nullable) - Auto-extracted by crawler (or pre-set override).
+* `business_email` (TEXT, Nullable) - Auto-extracted by crawler (or pre-set override).
+* `map_url` (TEXT, Nullable) - Auto-generated from extracted address (or pre-set override).
 * `business_timezone` (TEXT) - e.g., `"America/Los_Angeles"`.
 * `admin_chat_id` (TEXT) - Owner's Telegram chat ID.
+* `flyer_url` (TEXT) - Public URL link to the marketing PDF flyer stored in Supabase Storage.
 * `created_at` (TIMESTAMPTZ)
 
 ### B. `visitors` Table (User Session Routing)
@@ -101,19 +128,20 @@ A separate, lightweight Python daemon process runs on the VPS to handle executio
    LIMIT 1 
    FOR UPDATE SKIP LOCKED;
    ```
-2. **Crawl & Scraping**:
-   Updates status to `'processing'` and runs the Crawl4AI scraper on `website_url`.
-3. **Information Extraction**:
-   Runs a structured Gemini model extraction on the crawled pages to identify:
-   * The business phone number (standardized).
-   * The physical street address.
-   * Auto-writes these back to the `businesses` table.
-4. **Vector Generation**:
-   Generates Gemini embeddings for the new markdown page chunks.
-5. **Database Transaction**:
-   Deletes previous vector chunks for that business from `knowledge_chunks` and inserts the new embedding records.
-6. **Callback Notification**:
-   Changes job status to `'completed'` and (if `admin_chat_id` is set) messages the business owner on Telegram: *"🚀 Onboarding complete! Your customer link is ready: t.me/your_bot?start=v_[business_id]"*.
+ 2. **Crawl & Scraping**:
+    Updates status to `'processing'` and runs the Crawl4AI scraper on `website_url`.
+ 3. **Information Extraction**:
+    Runs a structured Gemini model extraction on the crawled pages to identify contact details (phone, address, email).
+ 4. **Non-Destructive Overrides (COALESCE)**:
+    Performs a SQL update on `businesses` using `COALESCE`. Pre-configured owner coordinates (phone/email/address/map) are preferred and preserved; the crawler only writes back newly scraped values if the fields in the database are currently NULL.
+ 5. **Vector Generation**:
+    Generates Gemini embeddings for the new markdown page chunks and stores them in `knowledge_chunks`.
+ 6. **Printable Flyer Compilation**:
+    Dynamically draws a high-fidelity US Letter marketing flyer using `reportlab` containing custom step-by-step instructions and a generated QR code linking to the customer chat deep link (`t.me/Dmhaircarebot?start=v_[business_id]`).
+ 7. **Supabase Storage Upload**:
+    Uploads the PDF flyer to the public `flyers` storage bucket in Supabase (specifying `content-type: application/pdf`), gets the public URL, and saves it in `businesses.flyer_url`.
+ 8. **Callback Notification**:
+    Changes job status to `'completed'` and (if `admin_chat_id` is set) sends a Telegram alert directly to the owner with their registered details and a clickable download link for their printable marketing flyer.
 
 ### C. Bulk Onboarding via Database Ingestion (`business_load` Table)
 To support bulk registration of businesses outside Telegram (e.g., uploading a CSV sheet of salons directly to the Supabase dashboard):
