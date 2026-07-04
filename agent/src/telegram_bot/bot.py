@@ -147,7 +147,8 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [
-            InlineKeyboardButton("🔄 Recrawl Website", callback_data=f"settings_recrawl_{business_id}")
+            InlineKeyboardButton("🔄 Recrawl Website", callback_data=f"settings_recrawl_{business_id}"),
+            InlineKeyboardButton("📷 Get Customer QR", callback_data=f"settings_qr_{business_id}")
         ]
     ]
     
@@ -207,6 +208,41 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                  f"The background scraper has been notified to scan <code>{biz_config['website_url']}</code> "
                  f"and update the search database for <b>{biz_config['business_name']}</b>.\n\n"
                  f"You will receive an alert here when the compilation is complete!",
+            parse_mode="HTML"
+        )
+        return
+
+    # 2. Handle Settings Get Customer QR Option
+    if data.startswith("settings_qr_"):
+        business_id = data.replace("settings_qr_", "")
+        
+        # Verify the requester is actually the admin for this business
+        biz_config = session.get_business_config(business_id)
+        if not biz_config or biz_config["admin_chat_id"] != chat_id:
+            return
+            
+        # Generate QR code for customer link in memory
+        import io
+        import qrcode
+        visitor_url = f"https://t.me/Dmhaircarebot?start=v_{business_id}"
+        
+        qr = qrcode.QRCode(version=1, box_size=10, border=4)
+        qr.add_data(visitor_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="#1E2229", back_color="white")
+        
+        # Save to byte stream to send to Telegram
+        bio = io.BytesIO()
+        bio.name = 'customer_qr.png'
+        img.save(bio, 'PNG')
+        bio.seek(0)
+        
+        # Send the customer QR code photo to the admin
+        await query.message.reply_photo(
+            photo=bio,
+            caption=f"📷 <b>Customer QR Code: {biz_config['business_name']}</b>\n"
+                    f"Place this QR in your salon! Customers who scan it will chat with {biz_config['agent_name']}.\n\n"
+                    f"Link: <code>{visitor_url}</code>",
             parse_mode="HTML"
         )
         return
