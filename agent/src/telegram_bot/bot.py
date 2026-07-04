@@ -22,10 +22,28 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         business_id = args[0].replace("a_", "")
         biz_name = session.bind_business_admin(business_id, chat_id)
         if biz_name:
-            await update.message.reply_text(
+            # Retrieve current business configuration to check flyer status
+            biz_config = session.get_business_config(business_id)
+            flyer_url = biz_config.get("flyer_url") if biz_config else None
+            
+            welcome_msg = (
                 f"✅ <b>Activation Complete!</b>\n\n"
                 f"Greetings! You are now successfully connected as the Admin of <b>{biz_name}</b>.\n"
-                f"You will receive customer alerts and direct escalations here.",
+                f"You will receive customer alerts and direct escalations here.\n\n"
+            )
+            
+            if flyer_url:
+                welcome_msg += f"📄 <b>Print-Ready Flyer:</b> <a href=\"{flyer_url}\">Download PDF Flyer</a>\n\n"
+            else:
+                welcome_msg += (
+                    f"📄 <b>Flyer Status:</b> Your print-ready marketing flyer is currently being compiled "
+                    f"and will be delivered to this chat shortly!\n\n"
+                )
+                
+            welcome_msg += "Type /settings at any time to open your control panel."
+            
+            await update.message.reply_text(
+                welcome_msg,
                 parse_mode="HTML"
             )
         else:
