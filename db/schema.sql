@@ -37,6 +37,7 @@ create table public.businesses (
     admin_chat_id text,
     active_visitor_chat_id text,
     flyer_url text,      -- Public Supabase Storage URL to the PDF flyer
+    owner_qr_url text,   -- Public Supabase Storage URL to the Owner Activation QR image
     created_at timestamptz not null default now()
 );
 

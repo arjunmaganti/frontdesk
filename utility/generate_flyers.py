@@ -250,9 +250,23 @@ def generate_all_flyers(specific_id: str = None):
                 print(f"   ✍️ Drawing {filename}...")
                 draw_flyer_pdf(output_path, biz_data)
                 
+                # Generate Owner Onboarding QR Code locally
+                owner_qr_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "owner_qrs"))
+                os.makedirs(owner_qr_dir, exist_ok=True)
+                owner_filename = f"owner_qr_{business_id}.png"
+                owner_qr_path = os.path.join(owner_qr_dir, owner_filename)
+                
+                activation_url = f"https://t.me/Dmhaircarebot?start=a_{business_id}"
+                qr = qrcode.QRCode(version=1, box_size=10, border=4)
+                qr.add_data(activation_url)
+                qr.make(fit=True)
+                qr_img = qr.make_image(fill_color="#1E2229", back_color="white")
+                qr_img.save(owner_qr_path)
+                
                 # Upload to Supabase Storage if connection is available
                 if sb:
                     try:
+                        # 1. Upload Customer PDF Flyer
                         print(f"   📤 Uploading {filename} to Supabase Storage...")
                         with open(output_path, "rb") as f:
                             sb.storage.from_("flyers").upload(
@@ -260,19 +274,29 @@ def generate_all_flyers(specific_id: str = None):
                                 path=filename,
                                 file_options={"cache-control": "3600", "upsert": "true", "content-type": "application/pdf"}
                             )
+                        public_flyer_url = sb.storage.from_("flyers").get_public_url(filename)
+                        print(f"   🔗 Flyer Link: {public_flyer_url}")
                         
-                        public_url = sb.storage.from_("flyers").get_public_url(filename)
-                        print(f"   🔗 Generated Link: {public_url}")
+                        # 2. Upload Owner Onboarding QR Code Image
+                        print(f"   📤 Uploading {owner_filename} to Supabase Storage...")
+                        with open(owner_qr_path, "rb") as f:
+                            sb.storage.from_("flyers").upload(
+                                file=f,
+                                path=owner_filename,
+                                file_options={"cache-control": "3600", "upsert": "true", "content-type": "image/png"}
+                            )
+                        public_owner_qr_url = sb.storage.from_("flyers").get_public_url(owner_filename)
+                        print(f"   🔗 Owner QR Link: {public_owner_qr_url}")
                         
-                        # Save URL in businesses table
+                        # Save URLs in businesses table
                         cur.execute(
-                            "UPDATE public.businesses SET flyer_url = %s WHERE business_id = %s",
-                            (public_url, business_id)
+                            "UPDATE public.businesses SET flyer_url = %s, owner_qr_url = %s WHERE business_id = %s",
+                            (public_flyer_url, public_owner_qr_url, business_id)
                         )
                         conn.commit()
-                        print("   💾 Database updated with flyer URL.")
+                        print("   💾 Database updated with flyer and owner QR URLs.")
                     except Exception as upload_err:
-                        print(f"   ⚠️ Upload failed: {upload_err}")
+                        print(f"   ⚠️ Upload/Database save failed: {upload_err}")
                 
             print(f"\n🚀 Complete! All flyers compiled.")
             
