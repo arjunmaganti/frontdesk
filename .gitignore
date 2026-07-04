@@ -45,4 +45,6 @@ deploy-test/
 deploy_*.zip
 flyers/
 owner_qrs/
+admin/node_modules/
+admin/dist/
 
