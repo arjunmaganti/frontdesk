@@ -22,9 +22,9 @@ From a business standpoint, the platform operates as a hands-off, self-serve Saa
 ```mermaid
 graph TD
     A["1. Staging / Bulk Import<br>(Upload CSV of Salons)"] --> B["2. Automated AI Setup<br>(AI Crawls Site & Generates Flyer)"]
-    B --> C["3. Operator Outreach<br>(Send Promotional Flyer / QR Link)"]
-    C --> D["4. Owner Onboarding<br>(Owner Claims Bot on Telegram)"]
-    D --> E["5. AI Chatbot is Live<br>(Customers Scan QR to Chat)"]
+    B --> C["3. Operator Outreach<br>(Send Customer Flyer & Owner Activation Link)"]
+    C --> D["4. Owner Onboarding<br>(Owner Claims Bot via Activation Link)"]
+    D --> E["5. AI Chatbot is Live<br>(Customers Scan Flyer QR to Chat)"]
     E --> F["6. Live Human Handoff<br>(Complex Query Alerts Salon Owner)"]
     F -->|Owner Resolves Chat| E
 ```
@@ -35,14 +35,14 @@ graph TD
 
 ### Stage 2: Automated AI Setup & Preparation
 * **Action**: The system visits the salon's website, extracts contact coordinates, reads their pages (services, prices, policies), trains the AI, and generates a branded, print-ready PDF flyer.
-* **Benefit**: The flyer features a unique QR code linked directly to the salon's bot, hosted publicly on Supabase Storage.
+* **Benefit**: The flyer features a unique customer-facing QR code (`start=v_[business_id]`), hosted publicly on Supabase Storage.
 
 ### Stage 3: Invitation & Activation
-* **Action**: The operator mails or emails the salon owner their printable flyer containing their unique onboarding activation link.
-* **Benefit**: The owner simply clicks the link on Telegram to claim ownership of their salon's AI dashboard.
+* **Action**: The operator emails/mails the salon owner their printable flyer alongside a private **Owner Activation Link** (`start=a_[business_id]`).
+* **Benefit**: The owner simply clicks the activation link on Telegram to claim ownership of their salon's AI dashboard.
 
 ### Stage 4: Going Live (Customer Engagement)
-* **Action**: The salon owner prints the flyer and places the QR code on their front counter or window.
+* **Action**: The salon owner prints the flyer and places the Customer QR code on their front counter or window.
 * **Benefit**: Clients scan the QR code to chat with the AI receptionist (Sarah) about bookings, services, and location details.
 
 ### Stage 5: Human in the Loop (Staff Handover)
