@@ -23,6 +23,8 @@ services:
     restart: always
     env_file:
       - .env
+    volumes:
+      - ./flyers:/app/flyers
     logging:
       driver: "json-file"
       options:
