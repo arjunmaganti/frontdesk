@@ -258,7 +258,7 @@ def generate_all_flyers(specific_id: str = None):
                             sb.storage.from_("flyers").upload(
                                 file=f,
                                 path=filename,
-                                file_options={"cache-control": "3600", "upsert": "true"}
+                                file_options={"cache-control": "3600", "upsert": "true", "content-type": "application/pdf"}
                             )
                         
                         public_url = sb.storage.from_("flyers").get_public_url(filename)
