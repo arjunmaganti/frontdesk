@@ -213,7 +213,15 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
             finally:
                 conn.close()
                 
-            # F. Notify the owner via Telegram
+            # F. Generate Branded PDF Flyer automatically
+            try:
+                from scripts.generate_flyers import generate_all_flyers
+                generate_all_flyers(specific_id=business_id)
+                logger.info(f"📄 Dynamically generated print-ready PDF flyer for {business_id}.")
+            except Exception as pdf_err:
+                logger.warning(f"⚠️ Failed to generate PDF flyer: {pdf_err}")
+
+            # G. Notify the owner via Telegram
             if admin_chat_id:
                 import asyncio
                 alert_text = (
