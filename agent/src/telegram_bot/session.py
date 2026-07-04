@@ -107,7 +107,7 @@ def get_business_config(business_id: str) -> dict:
                 """
                 SELECT business_name, agent_name, website_url, business_phone, 
                        business_address, business_email, map_url, business_timezone, 
-                       admin_chat_id, active_visitor_chat_id
+                       admin_chat_id, active_visitor_chat_id, flyer_url
                 FROM public.businesses 
                 WHERE business_id = %s
                 """,
@@ -126,7 +126,8 @@ def get_business_config(business_id: str) -> dict:
                     "map_url": row[6],
                     "business_timezone": row[7],
                     "admin_chat_id": row[8],
-                    "active_visitor_chat_id": row[9]
+                    "active_visitor_chat_id": row[9],
+                    "flyer_url": row[10]
                 }
             return None
     finally:

@@ -132,6 +132,14 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🔄 Recrawl Website", callback_data=f"settings_recrawl_{business_id}")
         ]
     ]
+    
+    # Add link to printable PDF flyer if it has been compiled
+    flyer_url = biz_config.get("flyer_url")
+    if flyer_url:
+        keyboard.append([
+            InlineKeyboardButton("📄 Download Flyer (PDF)", url=flyer_url)
+        ])
+        
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(

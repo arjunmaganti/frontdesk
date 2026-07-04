@@ -189,10 +189,23 @@ def draw_flyer_pdf(output_path: str, biz_data: dict):
     c.save()
 
 def generate_all_flyers(specific_id: str = None):
-    """Queries Supabase and generates PDF files in the /flyers output folder."""
+    """Queries Supabase, generates PDF files locally, and uploads them to Supabase Storage."""
     output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "flyers"))
     os.makedirs(output_dir, exist_ok=True)
     
+    # Initialize Supabase Client for Storage Bucket uploads
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        # Automatically ensure storage bucket exists and is public
+        try:
+            sb.storage.create_bucket("flyers", options={"public": True})
+        except Exception:
+            pass  # Already exists or no permission
+    except Exception as sb_err:
+        print(f"⚠️ Warning: Could not initialize Supabase client for storage: {sb_err}")
+        sb = None
+
     conn = get_pg_connection()
     try:
         with conn.cursor() as cur:
@@ -222,8 +235,9 @@ def generate_all_flyers(specific_id: str = None):
                 
             print(f"🎬 Compiling {len(rows)} PDF marketing flyers...")
             for row in rows:
+                business_id = row[0]
                 biz_data = {
-                    "business_id": row[0],
+                    "business_id": business_id,
                     "business_name": row[1],
                     "agent_name": row[2],
                     "website_url": row[3],
@@ -232,13 +246,37 @@ def generate_all_flyers(specific_id: str = None):
                     "business_email": row[6]
                 }
                 
-                filename = f"flyer_{biz_data['business_id']}.pdf"
+                filename = f"flyer_{business_id}.pdf"
                 output_path = os.path.join(output_dir, filename)
                 
                 print(f"   ✍️ Drawing {filename}...")
                 draw_flyer_pdf(output_path, biz_data)
                 
-            print(f"\n🚀 Complete! All flyers are compiled inside folder: {output_dir}")
+                # Upload to Supabase Storage if connection is available
+                if sb:
+                    try:
+                        print(f"   📤 Uploading {filename} to Supabase Storage...")
+                        with open(output_path, "rb") as f:
+                            sb.storage.from_("flyers").upload(
+                                file=f,
+                                path=filename,
+                                file_options={"cache-control": "3600", "upsert": "true"}
+                            )
+                        
+                        public_url = sb.storage.from_("flyers").get_public_url(filename)
+                        print(f"   🔗 Generated Link: {public_url}")
+                        
+                        # Save URL in businesses table
+                        cur.execute(
+                            "UPDATE public.businesses SET flyer_url = %s WHERE business_id = %s",
+                            (public_url, business_id)
+                        )
+                        conn.commit()
+                        print("   💾 Database updated with flyer URL.")
+                    except Exception as upload_err:
+                        print(f"   ⚠️ Upload failed: {upload_err}")
+                
+            print(f"\n🚀 Complete! All flyers compiled.")
             
     finally:
         conn.close()

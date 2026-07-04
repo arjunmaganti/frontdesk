@@ -36,6 +36,7 @@ create table public.businesses (
     business_timezone text not null default 'America/Los_Angeles',
     admin_chat_id text,
     active_visitor_chat_id text,
+    flyer_url text,      -- Public Supabase Storage URL to the PDF flyer
     created_at timestamptz not null default now()
 );
 

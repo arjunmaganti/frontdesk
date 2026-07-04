@@ -223,16 +223,33 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
 
             # G. Notify the owner via Telegram
             if admin_chat_id:
+                # Re-query to get the freshly generated flyer_url from Supabase Storage
+                conn_alert = get_pg_connection()
+                final_flyer_url = None
+                try:
+                    with conn_alert.cursor() as cur:
+                        cur.execute("SELECT flyer_url FROM public.businesses WHERE business_id = %s", (business_id,))
+                        row = cur.fetchone()
+                        if row:
+                            final_flyer_url = row[0]
+                finally:
+                    conn_alert.close()
+
                 import asyncio
-                alert_text = (
-                    f"🚀 <b>Crawling & Compilation Complete!</b>\n\n"
-                    f"🏢 <b>Business:</b> {business_name}\n"
-                    f"🌐 <b>Website:</b> <code>{website_url}</code>\n"
-                    f"🔹 <b>Phone:</b> {final_phone or 'Not Found'}\n"
-                    f"🔹 <b>Address:</b> {final_address or 'Not Found'}\n"
-                    f"🔹 <b>Email:</b> {final_email or 'Not Found'}\n\n"
-                    f"Your customer assistant is now fully updated and active!"
-                )
+                alert_lines = [
+                    f"🚀 <b>Crawling & Compilation Complete!</b>\n",
+                    f"🏢 <b>Business:</b> {business_name}",
+                    f"🌐 <b>Website:</b> <code>{website_url}</code>",
+                    f"🔹 <b>Phone:</b> {final_phone or 'Not Found'}",
+                    f"🔹 <b>Address:</b> {final_address or 'Not Found'}",
+                    f"🔹 <b>Email:</b> {final_email or 'Not Found'}"
+                ]
+                
+                if final_flyer_url:
+                    alert_lines.append(f"📄 <b>Flyer:</b> <a href=\"{final_flyer_url}\">Download PDF Flyer</a>")
+                    
+                alert_lines.append("\nYour customer assistant is now fully updated and active!")
+                alert_text = "\n".join(alert_lines)
                 asyncio.run(send_telegram_alert(admin_chat_id, alert_text))
                 
             return True
