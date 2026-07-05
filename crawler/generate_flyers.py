@@ -271,7 +271,7 @@ def generate_all_flyers(specific_id: str = None):
                 draw_flyer_pdf(output_path, biz_data)
                 
                 # Generate Owner Onboarding QR Code locally
-                owner_qr_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "owner_qrs"))
+                owner_qr_dir = os.path.join(tempfile.gettempdir(), "owner_qrs")
                 os.makedirs(owner_qr_dir, exist_ok=True)
                 owner_filename = f"owner_qr_{business_id}.png"
                 owner_qr_path = os.path.join(owner_qr_dir, owner_filename)
