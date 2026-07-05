@@ -143,9 +143,69 @@ def handoff_node(state: AgentState) -> dict:
     # Return placeholder. The bot middleware will catch this state and alert the admin.
     return {"messages": ["Transferring you to our front desk team. A receptionist will assist you directly!"]}
 
+# Node 5: Disambiguate
+def disambiguate_node(state: AgentState) -> dict:
+    # The last message is the RAG fallback response, so user query is before it
+    if len(state["messages"]) >= 2:
+        user_query = state["messages"][-2].content
+    else:
+        user_query = state["messages"][-1].content
+        
+    import os
+    # Base dir is /app/agent (Docker) or frontdesk/agent (Local)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    assumptions_path = os.path.join(base_dir, "assumptions.md")
+    
+    assumptions_content = ""
+    if os.path.exists(assumptions_path):
+        try:
+            with open(assumptions_path, "r", encoding="utf-8") as f:
+                assumptions_content = f.read()
+        except Exception as e:
+            logger.error(f"Error reading assumptions file: {e}")
+            
+    llm = get_llm(temperature=0.2)
+    
+    prompt = f"""You are a receptionist assistant helper.
+A visitor asked a question, but our main facts didn't have the answer.
+Your task is to check if our standard corporate assumptions document contains a default rule or assumption that answers their question.
+
+Visitor's Question: "{user_query}"
+
+Corporate Assumptions Document:
+{assumptions_content}
+
+Instructions:
+1. If the Assumptions Document has a clear, matching assumption that answers the visitor's question, write a friendly, concise, and helpful receptionist response answering their question using ONLY that assumption. Do not mention that you are using assumptions or an assumption document.
+2. If the Assumptions Document does NOT contain a relevant assumption that answers the visitor's question, you must respond EXACTLY with the fallback message:
+"I couldn't find the answer to that in our files. Let me escalate this to our staff to help you directly."
+
+Response:"""
+
+    response = llm.invoke([
+        HumanMessage(content=prompt)
+    ])
+    
+    # Overwrite the fallback message in state instead of appending
+    if state["messages"]:
+        last_msg = state["messages"][-1]
+        if hasattr(last_msg, "id") and last_msg.id:
+            response.id = last_msg.id
+            
+    return {"messages": [response]}
+
 # Routing decision logic
 def route_by_intent(state: AgentState) -> Literal["chitchat", "kb_query", "handoff"]:
     return state["intent"]
+
+def check_rag_result(state: AgentState) -> Literal["disambiguate", "end"]:
+    if not state["messages"]:
+        return "end"
+    last_msg = state["messages"][-1].content
+    fallback_msg = "I couldn't find the answer to that in our files. Let me escalate this to our staff to help you directly."
+    if fallback_msg in last_msg:
+        return "disambiguate"
+    return "end"
 
 # State Graph Construction
 workflow = StateGraph(AgentState)
@@ -155,6 +215,7 @@ workflow.add_node("classifier", classify_intent_node)
 workflow.add_node("chitchat", casual_reply_node)
 workflow.add_node("kb_query", search_respond_node)
 workflow.add_node("handoff", handoff_node)
+workflow.add_node("disambiguate", disambiguate_node)
 
 # Link nodes with conditional routing edges
 workflow.add_edge(START, "classifier")
@@ -167,8 +228,16 @@ workflow.add_conditional_edges(
         "handoff": "handoff"
     }
 )
+workflow.add_conditional_edges(
+    "kb_query",
+    check_rag_result,
+    {
+        "disambiguate": "disambiguate",
+        "end": END
+    }
+)
 workflow.add_edge("chitchat", END)
-workflow.add_edge("kb_query", END)
+workflow.add_edge("disambiguate", END)
 workflow.add_edge("handoff", END)
 
 # Compile with in-memory checkpointer for session mapping
