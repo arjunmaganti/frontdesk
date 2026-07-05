@@ -2,9 +2,12 @@ import sys
 import logging
 import asyncio
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Union, List, Dict
+import requests
+import src.config as config
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from src.telegram_bot.bot import build_bot_app
@@ -72,6 +75,116 @@ async def chat_history(business_id: str, thread_id: str = "test_thread"):
     except Exception as e:
         logger.error(f"Error fetching history: {e}")
         return {"history": []}
+
+# JWT Token Validation Dependency using Supabase Auth User Endpoint
+async def validate_token(authorization: str = Header(...)):
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+    token = authorization.split(" ")[1]
+    
+    url = f"{config.SUPABASE_URL}/auth/v1/user"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "apikey": config.SUPABASE_SERVICE_ROLE_KEY
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=5)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        return resp.json()
+    except Exception as e:
+        logger.error(f"Token validation error: {e}")
+        raise HTTPException(status_code=401, detail="Token verification failed")
+
+# Proxy Endpoints for Supabase database operations
+@api_app.get("/api/businesses")
+async def get_businesses(_user: dict = Depends(validate_token)):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        resp = sb.table("businesses").select("*").order("business_name").execute()
+        return resp.data
+    except Exception as e:
+        logger.error(f"Error fetching businesses: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.get("/api/crawl-jobs")
+async def get_crawl_jobs(_user: dict = Depends(validate_token)):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        resp = sb.table("crawl_jobs").select("*").order("created_at", desc=True).limit(6).execute()
+        return resp.data
+    except Exception as e:
+        logger.error(f"Error fetching crawl jobs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.get("/api/admin-relay")
+async def get_admin_relay(_user: dict = Depends(validate_token)):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        resp = sb.table("admin_relay").select("*").eq("is_paused", True).execute()
+        return resp.data
+    except Exception as e:
+        logger.error(f"Error fetching admin relay: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.get("/api/daily-usage")
+async def get_daily_usage(_user: dict = Depends(validate_token)):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        resp = sb.table("daily_usage").select("*").order("usage_date", desc=False).limit(14).execute()
+        return resp.data
+    except Exception as e:
+        logger.error(f"Error fetching daily usage: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.get("/api/knowledge-chunks")
+async def get_knowledge_chunks(business_id: str, _user: dict = Depends(validate_token)):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        resp = sb.table("knowledge_chunks").select("id, content").eq("business_id", business_id).execute()
+        return resp.data
+    except Exception as e:
+        logger.error(f"Error fetching knowledge chunks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.post("/api/business-load")
+async def insert_business_load(data: Union[Dict, List[Dict]], _user: dict = Depends(validate_token)):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        rows = data if isinstance(data, list) else [data]
+        resp = sb.table("business_load").insert(rows).execute()
+        return {"success": True, "data": resp.data}
+    except Exception as e:
+        logger.error(f"Error inserting business load: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.delete("/api/businesses/{business_id}")
+async def delete_business(business_id: str, _user: dict = Depends(validate_token)):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        resp = sb.table("businesses").delete().eq("business_id", business_id).execute()
+        return {"success": True, "data": resp.data}
+    except Exception as e:
+        logger.error(f"Error deleting business: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.delete("/api/business-load/{business_id}")
+async def delete_business_load(business_id: str, _user: dict = Depends(validate_token)):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        resp = sb.table("business_load").delete().eq("business_id", business_id).execute()
+        return {"success": True, "data": resp.data}
+    except Exception as e:
+        logger.error(f"Error deleting business load: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 async def run_services():
     print("---------------------------------------------")

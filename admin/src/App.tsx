@@ -155,7 +155,14 @@ function FrontdeskLogo() {
   );
 }
 
+const API_BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000/api";
+
 export default function App() {
+  const [session, setSession] = useState<any>(null);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginErr, setLoginErr] = useState('');
+
   const [activeTab, setActiveTab] = useState<'dashboard' | 'onboarding' | 'simulator' | 'directory'>('dashboard');
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -196,33 +203,56 @@ export default function App() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
+  // Auth Listener
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Helper to fetch endpoints with Supabase Auth session JWT token
+  const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    
+    const headers = new Headers(options.headers || {});
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+    
+    return fetch(url, {
+      ...options,
+      headers
+    });
+  };
+
   // Load Database Metrics
   const loadData = async () => {
     try {
       setLoading(true);
       
       // A. Load Businesses
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('business_id, business_name, agent_name, website_url, business_phone, business_address, business_email, flyer_url, owner_qr_url, business_timezone, admin_chat_id, created_at');
+      const resB = await authenticatedFetch(`${API_BASE}/businesses`);
+      const bData = resB.ok ? await resB.json() : [];
       setBusinesses(bData || []);
 
       // B. Load Recent Crawl Jobs
-      const { data: cData } = await supabase
-        .from('crawl_jobs')
-        .select('id, business_id, website_url, status, error_message, created_at')
-        .order('created_at', { ascending: false })
-        .limit(6);
+      const resC = await authenticatedFetch(`${API_BASE}/crawl-jobs`);
+      const cData = resC.ok ? await resC.json() : [];
       setCrawlJobs(cData || []);
 
-      // C. Load Active Escalations (where AI is paused)
-      const { data: rData } = await supabase
-        .from('admin_relay')
-        .select('visitor_chat_id, pending_question, business_id')
-        .eq('is_paused', true);
+      // C. Load Active Escalations
+      const resR = await authenticatedFetch(`${API_BASE}/admin-relay`);
+      const rData = resR.ok ? await resR.json() : [];
         
-      const mappedEscalations = (rData || []).map(esc => {
-        const match = (bData || []).find(b => b.business_id === esc.business_id);
+      const mappedEscalations = (rData || []).map((esc: any) => {
+        const match = (bData || []).find((b: any) => b.business_id === esc.business_id);
         return {
           ...esc,
           business_name: match ? match.business_name : esc.business_id
@@ -231,12 +261,8 @@ export default function App() {
       setEscalations(mappedEscalations);
 
       // D. Load Daily Usage Trends
-      const { data: uData } = await supabase
-        .from('daily_usage')
-        .select('usage_date, message_count')
-        .order('usage_date', { ascending: true })
-        .limit(14);
-        
+      const resU = await authenticatedFetch(`${API_BASE}/daily-usage`);
+      const uData = resU.ok ? await resU.json() : [];
       setUsageTrends(uData || []);
 
     } catch (err: any) {
@@ -257,7 +283,7 @@ export default function App() {
   const loadChatHistory = async (businessId: string, currentThreadId: string) => {
     if (!businessId) return;
     try {
-      const response = await fetch(`http://localhost:8000/api/chat/history?business_id=${businessId}&thread_id=${currentThreadId}`);
+      const response = await authenticatedFetch(`${API_BASE}/chat/history?business_id=${businessId}&thread_id=${currentThreadId}`);
       const data = await response.json();
       if (data.history && data.history.length > 0) {
         setChatMessages(data.history);
@@ -293,7 +319,7 @@ export default function App() {
     setChatLoading(true);
     
     try {
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -326,11 +352,9 @@ export default function App() {
     if (!bizId) return;
     try {
       setChunksLoading(true);
-      const { data, error } = await supabase
-        .from('knowledge_chunks')
-        .select('id, content, metadata')
-        .eq('business_id', bizId);
-      if (error) throw error;
+      const response = await authenticatedFetch(`${API_BASE}/knowledge-chunks?business_id=${bizId}`);
+      if (!response.ok) throw new Error("Failed to load chunks");
+      const data = await response.json();
       setSelectedBusinessChunks(data || []);
     } catch (err) {
       console.error("Error loading chunks:", err);
@@ -444,20 +468,27 @@ export default function App() {
     }
 
     try {
-      // Ingest into business_load
-      const { error } = await supabase.from('business_load').insert([{
-        business_id: newBusiness.business_id.trim().toLowerCase(),
-        business_name: newBusiness.business_name.trim(),
-        agent_name: newBusiness.agent_name.trim(),
-        website_url: newBusiness.website_url.trim(),
-        business_phone: formattedPhone || null,
-        business_address: newBusiness.business_address.trim() || null,
-        business_email: newBusiness.business_email.trim() || null,
-        map_url: newBusiness.map_url.trim() || null,
-        status: 'pending'
-      }]);
+      // Ingest into business_load via Proxy API
+      const res = await authenticatedFetch(`${API_BASE}/business-load`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: newBusiness.business_id.trim().toLowerCase(),
+          business_name: newBusiness.business_name.trim(),
+          agent_name: newBusiness.agent_name.trim(),
+          website_url: newBusiness.website_url.trim(),
+          business_phone: formattedPhone || null,
+          business_address: newBusiness.business_address.trim() || null,
+          business_email: newBusiness.business_email.trim() || null,
+          map_url: newBusiness.map_url.trim() || null,
+          status: 'pending'
+        })
+      });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to register business");
+      }
 
       setFormMsg({ type: 'success', text: `Successfully registered ${newBusiness.business_name}! Scraper triggered.` });
       setErrors({});
@@ -548,9 +579,16 @@ export default function App() {
             return;
           }
 
-          // Insert array into business_load
-          const { error } = await supabase.from('business_load').insert(cleanRows);
-          if (error) throw error;
+          // Insert array into business_load via Proxy API
+          const res = await authenticatedFetch(`${API_BASE}/business-load`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cleanRows)
+          });
+          if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.detail || "Failed to import rows");
+          }
 
           setCsvMsg({ type: 'success', text: `Successfully imported ${cleanRows.length} businesses! Scraper queue updated.` });
           loadData();
@@ -566,21 +604,23 @@ export default function App() {
 
   const executeDeleteBusiness = async (bizId: string) => {
     try {
-      // 1. Delete from main businesses table (cascades to crawl_jobs, knowledge_chunks, etc.)
-      const { error: bizErr } = await supabase
-        .from('businesses')
-        .delete()
-        .eq('business_id', bizId);
+      // 1. Delete from main businesses table via Proxy API
+      const resBiz = await authenticatedFetch(`${API_BASE}/businesses/${bizId}`, {
+        method: 'DELETE'
+      });
+      if (!resBiz.ok) {
+        const errData = await resBiz.json();
+        throw new Error(errData.detail || "Failed to delete business profile");
+      }
       
-      if (bizErr) throw bizErr;
-      
-      // 2. Also delete from business_load staging table so it can be re-onboarded
-      const { error: loadErr } = await supabase
-        .from('business_load')
-        .delete()
-        .eq('business_id', bizId);
-
-      if (loadErr) throw loadErr;
+      // 2. Also delete from business_load staging table via Proxy API
+      const resLoad = await authenticatedFetch(`${API_BASE}/business-load/${bizId}`, {
+        method: 'DELETE'
+      });
+      if (!resLoad.ok) {
+        const errData = await resLoad.json();
+        throw new Error(errData.detail || "Failed to delete business staging row");
+      }
 
       // 3. Clear selections if the deleted business was currently selected
       if (selectedDirectoryBusinessId === bizId) {
@@ -595,6 +635,59 @@ export default function App() {
       alert(`Delete failed: ${err.message}`);
     }
   };
+
+  if (!session) {
+    const handleLoginSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setLoginErr('');
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: loginPassword
+        });
+        if (error) throw error;
+      } catch (err: any) {
+        setLoginErr(err.message || 'Login failed. Please check your credentials.');
+      }
+    };
+
+    return (
+      <div className="login-wrapper">
+        <div className="login-card">
+          <div className="login-header">
+            <h1>Frontdesk</h1>
+            <p>SaaS Admin Control Panel</p>
+          </div>
+          <form className="login-form" onSubmit={handleLoginSubmit}>
+            {loginErr && <div className="login-error">{loginErr}</div>}
+            <div className="login-group">
+              <label className="login-label">Email Address</label>
+              <input 
+                type="email" 
+                className="login-input" 
+                placeholder="admin@example.com"
+                value={loginEmail}
+                onChange={e => setLoginEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="login-group">
+              <label className="login-label">Password</label>
+              <input 
+                type="password" 
+                className="login-input" 
+                placeholder="••••••••"
+                value={loginPassword}
+                onChange={e => setLoginPassword(e.target.value)}
+                required
+              />
+            </div>
+            <button type="submit" className="login-btn">Sign In</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -631,6 +724,22 @@ export default function App() {
             Search Directory
           </button>
         </nav>
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', color: 'var(--text-mute)', borderTop: '1px solid var(--border-card)', paddingTop: '1rem' }}>
+            Logged in as:
+            <div style={{ color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '0.2rem' }}>
+              {session.user.email}
+            </div>
+          </div>
+          <button 
+            className="nav-btn" 
+            style={{ color: 'var(--rose)', marginTop: '0.5rem' }} 
+            onClick={() => supabase.auth.signOut()}
+          >
+            <ShieldAlert size={18} />
+            Sign Out
+          </button>
+        </div>
       </aside>
 
       {/* 2. Main content block */}
