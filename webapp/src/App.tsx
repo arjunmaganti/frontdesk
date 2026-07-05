@@ -322,7 +322,8 @@ export default function App() {
             <ThreadPrimitive.Messages
               components={{
                 Message: ({ message }: any) => {
-                  const m = messages.find(x => String(x.id) === message.id);
+                  if (!message) return null;
+                  const m = messages.find(x => x && x.id && String(x.id) === message.id);
                   const isMe = message.role === 'user';
                   const senderName = isMe ? 'You' : (m?.sender === 'staff' ? 'Staff Representative' : (bizConfig.agent_name || 'Frontdesk'));
                   
