@@ -198,7 +198,7 @@ export default function App() {
   const handleSlugSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (slugInput.trim()) {
-      window.location.search = `?biz=${slugInput.trim()}`;
+      window.location.href = `${window.location.origin}/?biz=${encodeURIComponent(slugInput.trim())}`;
     }
   };
 
