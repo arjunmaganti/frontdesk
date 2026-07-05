@@ -144,13 +144,28 @@ def handoff_node(state: AgentState) -> dict:
     return {"messages": ["Transferring you to our front desk team. A receptionist will assist you directly!"]}
 
 # Node 5: Disambiguate
-def disambiguate_node(state: AgentState) -> dict:
+def disambiguate_node(state: AgentState, config: RunnableConfig) -> dict:
     # The last message is the RAG fallback response, so user query is before it
     if len(state["messages"]) >= 2:
         user_query = state["messages"][-2].content
     else:
         user_query = state["messages"][-1].content
         
+    business_id = config.get("configurable", {}).get("tenant_id")
+    biz_config = session.get_business_config(business_id) if business_id else None
+    timezone_str = biz_config.get("business_timezone") if biz_config else "America/Los_Angeles"
+    
+    from zoneinfo import ZoneInfo
+    from datetime import datetime
+    try:
+        tz = ZoneInfo(timezone_str)
+    except Exception:
+        tz = ZoneInfo("America/Los_Angeles")
+        
+    now = datetime.now(tz)
+    current_day = now.strftime("%A")
+    current_time = now.strftime("%I:%M %p")
+    
     import os
     # Base dir is /app/agent (Docker) or frontdesk/agent (Local)
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -172,12 +187,19 @@ Your task is to check if our standard corporate assumptions document contains a 
 
 Visitor's Question: "{user_query}"
 
+CURRENT TIME AT THE BUSINESS:
+- Day of Week: {current_day}
+- Current Local Time: {current_time}
+
 Corporate Assumptions Document:
 {assumptions_content}
 
 Instructions:
-1. If the Assumptions Document has a clear, matching assumption that answers the visitor's question, write a friendly, concise, and helpful receptionist response answering their question using ONLY that assumption. Do not mention that you are using assumptions or an assumption document.
-2. If the Assumptions Document does NOT contain a relevant assumption that answers the visitor's question, you must respond EXACTLY with the fallback message:
+1. If the visitor is asking whether the business is open right now, check the default operating hours listed in the Assumptions Document. Compare the current day and local time against the operating hours to determine if we are currently open:
+   - If the current local time falls within the open hours, respond politely that we are open right now, and state our daily operating hours.
+   - If the current local time falls outside the open hours, respond politely that we are currently closed, state our daily operating hours, and offer to help them when we reopen.
+2. If the Assumptions Document has another clear, matching default rule that answers the visitor's question, write a friendly, concise receptionist response using that assumption. Do not mention that you are using assumptions or an assumption document.
+3. If the Assumptions Document does NOT contain a relevant assumption that answers the visitor's question, you must respond EXACTLY with the fallback message:
 "I couldn't find the answer to that in our files. Let me escalate this to our staff to help you directly."
 
 Response:"""
