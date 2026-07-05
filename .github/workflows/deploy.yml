@@ -3,10 +3,18 @@ name: Deploy to DigitalOcean Droplet
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -19,3 +27,10 @@ jobs:
             git checkout main
             git pull origin main
             docker compose up -d --build
+
+      - name: Tag Released Version as "Golden"
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa Golden -m "Deploys this commit to Production"
+          git push origin refs/tags/Golden --force
