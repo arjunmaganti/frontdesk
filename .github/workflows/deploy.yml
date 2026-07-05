@@ -32,5 +32,11 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -fa Golden -m "Deploys this commit to Production"
-          git push origin refs/tags/Golden --force
+          # 1. Delete the remote "Golden" tag first (prevents conflicts or drift)
+          git push origin :refs/tags/Golden || true
+          # 2. Delete the local "Golden" tag if it exists
+          git tag -d Golden || true
+          # 3. Create a fresh tag pointing to the currently released commit
+          git tag Golden
+          # 4. Push the fresh tag to remote origin
+          git push origin refs/tags/Golden
