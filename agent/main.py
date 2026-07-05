@@ -185,6 +185,162 @@ async def delete_business_load(business_id: str, _user: dict = Depends(validate_
     except Exception as e:
         logger.error(f"Error deleting business load: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+# =====================================================================
+# Web App Receptionist Endpoints (Public/Anonymous Visitor)
+# =====================================================================
+
+class WebSessionRequest(BaseModel):
+    business_id: str
+    visitor_ip: str = None
+    user_agent: str = None
+
+@api_app.post("/api/webapp/session")
+async def create_webapp_session(req: WebSessionRequest):
+    try:
+        from src.db import get_supabase_client
+        import uuid
+        sb = get_supabase_client()
+        
+        # Check if business exists
+        biz = sb.table("businesses").select("business_id").eq("business_id", req.business_id).execute()
+        if not biz.data:
+            raise HTTPException(status_code=404, detail="Business not found")
+            
+        session_id = str(uuid.uuid4())
+        
+        # Insert into web_sessions
+        sb.table("web_sessions").insert({
+            "session_id": session_id,
+            "business_id": req.business_id,
+            "visitor_ip": req.visitor_ip,
+            "user_agent": req.user_agent
+        }).execute()
+        
+        # Insert into visitors for Telegram session compatibility
+        from src.telegram_bot.session import set_visitor_business
+        set_visitor_business(session_id, req.business_id)
+        
+        return {"session_id": session_id}
+    except Exception as e:
+        logger.error(f"Error creating web session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class WebChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+@api_app.post("/api/webapp/chat")
+async def webapp_chat(req: WebChatRequest):
+    try:
+        from src.db import get_supabase_client
+        from src.telegram_bot.session import is_visitor_paused, set_visitor_paused, save_pending_question, get_business_config
+        sb = get_supabase_client()
+        
+        # 1. Retrieve the business linked to the web session
+        res = sb.table("web_sessions").select("business_id").eq("session_id", req.session_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Invalid web session ID")
+        business_id = res.data[0]["business_id"]
+        
+        # Log user query in chat logs
+        sb.table("web_chat_messages").insert({
+            "session_id": req.session_id,
+            "sender": "visitor",
+            "message": req.message
+        }).execute()
+        
+        # 2. Check if the session is currently paused for human override
+        if is_visitor_paused(req.session_id):
+            biz_config = get_business_config(business_id)
+            if biz_config and biz_config.get("admin_chat_id"):
+                from src.telegram_bot.bot import build_bot_app
+                bot = build_bot_app().bot
+                await bot.send_message(
+                    chat_id=biz_config["admin_chat_id"],
+                    text=f"⚠️ [Web Visitor Follow-up]:\n{req.message}\n\n(AI is paused for this visitor)"
+                )
+            
+            support_reply = "Our staff is reviewing your message and will respond shortly."
+            sb.table("web_chat_messages").insert({
+                "session_id": req.session_id,
+                "sender": "system",
+                "message": support_reply
+            }).execute()
+            
+            return {"reply": support_reply, "is_paused": True}
+            
+        # 3. Call the LangGraph agent app
+        config_run = {"configurable": {"thread_id": req.session_id, "tenant_id": business_id}}
+        result = await agent_app.ainvoke(
+            {"messages": [("user", req.message)]},
+            config=config_run
+        )
+        
+        content_val = result["messages"][-1].content
+        if isinstance(content_val, list):
+            reply = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in content_val])
+        else:
+            reply = str(content_val)
+            
+        intent = result.get("intent", "kb_query")
+        
+        # 4. Handle handoff logic
+        fallback_msg = "I couldn't find the answer to that in our files. Let me escalate this to our staff to help you directly."
+        is_fallback = (fallback_msg in reply)
+        
+        is_paused = False
+        if intent == "handoff" or is_fallback:
+            set_visitor_paused(req.session_id, True, business_id)
+            save_pending_question(req.session_id, req.message, business_id)
+            is_paused = True
+            
+            biz_config = get_business_config(business_id)
+            if biz_config and biz_config.get("admin_chat_id"):
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                from src.telegram_bot.bot import build_bot_app
+                bot = build_bot_app().bot
+                
+                keyboard = [
+                    [
+                        InlineKeyboardButton("💬 Reply to Visitor", callback_data=f"reply_to_{req.session_id}"),
+                        InlineKeyboardButton("✅ Resolve Chat", callback_data=f"resolve_chat_{req.session_id}")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await bot.send_message(
+                    chat_id=biz_config["admin_chat_id"],
+                    text=(
+                        f"🚨 <b>Human Escalation Alert (Web)</b>\n\n"
+                        f"<b>Visitor Question:</b> {req.message}\n\n"
+                        f"AI has been paused. Use the buttons below or reply in the Admin Console."
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=reply_markup
+                )
+        
+        # Log assistant response
+        sb.table("web_chat_messages").insert({
+            "session_id": req.session_id,
+            "sender": "assistant",
+            "message": reply
+        }).execute()
+        
+        return {"reply": reply, "is_paused": is_paused}
+    except Exception as e:
+        logger.error(f"Error in webapp chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.get("/api/webapp/messages")
+async def get_webapp_messages(session_id: str):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        resp = sb.table("web_chat_messages").select("*").eq("session_id", session_id).order("created_at", desc=False).execute()
+        return resp.data
+    except Exception as e:
+        logger.error(f"Error fetching web messages: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 async def run_services():
     print("---------------------------------------------")

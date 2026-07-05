@@ -47,3 +47,17 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  webapp:
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    container_name: frontdesk-webapp
+    restart: always
+    ports:
+      - "8080:80"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

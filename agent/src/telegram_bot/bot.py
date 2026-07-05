@@ -354,16 +354,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         active_visitor_id = session.get_active_visitor_for_admin(chat_id)
         
         if active_visitor_id:
+            # Check if active_visitor_id is a web session (UUID) instead of a numeric Telegram ID
+            is_web_visitor = not active_visitor_id.lstrip('-').isdigit()
+            
             # If the admin types /resolve, close it immediately
             if user_message.strip() == "/resolve":
                 session.set_visitor_paused(active_visitor_id, False, business_id)
                 session.clear_active_visitor_for_admin(business_id)
                 await update.message.reply_text("✅ Chat resolved. AI bot reactivated.")
-                await context.bot.send_message(
-                    chat_id=active_visitor_id,
-                    text="🔔 *The front desk staff has closed the chat. The automated assistant is back online to help you!*",
-                    parse_mode="Markdown"
-                )
+                if is_web_visitor:
+                    try:
+                        from src.db import get_supabase_client
+                        sb = get_supabase_client()
+                        sb.table("web_chat_messages").insert({
+                            "session_id": active_visitor_id,
+                            "sender": "system",
+                            "message": "🔔 The front desk staff has resolved the chat. The automated receptionist is back online!"
+                        }).execute()
+                    except Exception as err:
+                        logger.error(f"Failed to insert resolution msg: {err}")
+                else:
+                    await context.bot.send_message(
+                        chat_id=active_visitor_id,
+                        text="🔔 *The front desk staff has closed the chat. The automated assistant is back online to help you!*",
+                        parse_mode="Markdown"
+                    )
                 return
             
             # Capture this message as the answer to the pending question before relaying!
@@ -372,17 +387,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 session.save_resolved_qa(business_id, pending_question, user_message)
                 session.save_pending_question(active_visitor_id, None, business_id) # Clear pending
                 
-            # Relay the admin's message directly to the visitor
-            try:
-                await context.bot.send_message(
-                    chat_id=active_visitor_id,
-                    text=f"✉️ **Front Desk Staff:**\n{user_message}"
-                )
-                logger.info(f"🔄 [Admin Relay] Relayed message from Admin ({chat_id}) to Visitor ({active_visitor_id}): \"{user_message}\"")
-                await update.message.reply_text(f"🚀 Relayed message to visitor.")
-            except Exception as e:
-                logger.error(f"❌ Failed to relay message to visitor {active_visitor_id}: {e}")
-                await update.message.reply_text(f"❌ Failed to relay message: {e}")
+            if is_web_visitor:
+                # Relay the admin's message to the Web Visitor via database message log
+                try:
+                    from src.db import get_supabase_client
+                    sb = get_supabase_client()
+                    sb.table("web_chat_messages").insert({
+                        "session_id": active_visitor_id,
+                        "sender": "staff",
+                        "message": user_message
+                    }).execute()
+                    logger.info(f"🔄 [Admin Relay Web] Relayed message from Admin ({chat_id}) to Web Visitor ({active_visitor_id}): \"{user_message}\"")
+                    await update.message.reply_text(f"🚀 Relayed message to web visitor.")
+                except Exception as e:
+                    logger.error(f"❌ Failed to relay message to web visitor {active_visitor_id}: {e}")
+                    await update.message.reply_text(f"❌ Failed to relay message: {e}")
+            else:
+                # Relay the admin's message directly to the Telegram visitor
+                try:
+                    await context.bot.send_message(
+                        chat_id=active_visitor_id,
+                        text=f"✉️ **Front Desk Staff:**\n{user_message}"
+                    )
+                    logger.info(f"🔄 [Admin Relay] Relayed message from Admin ({chat_id}) to Visitor ({active_visitor_id}): \"{user_message}\"")
+                    await update.message.reply_text(f"🚀 Relayed message to visitor.")
+                except Exception as e:
+                    logger.error(f"❌ Failed to relay message to visitor {active_visitor_id}: {e}")
+                    await update.message.reply_text(f"❌ Failed to relay message: {e}")
         else:
             await update.message.reply_text(
                 "You are currently not connected to any visitor.\n"
