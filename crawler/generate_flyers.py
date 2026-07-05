@@ -116,49 +116,71 @@ def draw_flyer_pdf(output_path: str, biz_data: dict):
     c.setFont("Helvetica", 11)
     intro_lines = [
         "Need to check our services, booking details, location, or general questions?",
-        "Skip the wait! Simply scan the QR code below to launch our virtual assistant on Telegram.",
-        f"Sarah is fully trained on all our latest salon details and is ready to assist you instantly!"
+        "Skip the wait! Scan below to chat on Telegram or open our mobile-friendly Web App.",
+        f"Our virtual receptionist is fully trained and ready to help you instantly 24/7!"
     ]
     y_offset = height - 2.8 * inch
     for line in intro_lines:
         c.drawCentredString(width / 2.0, y_offset, line)
         y_offset -= 18
         
-    # 6. QR Code Card Block (Centered Card containing QR Code)
-    card_w, card_h = 240, 240
-    card_x = (width - card_w) / 2.0
-    card_y = height - 6.8 * inch # Shifted down by 0.2 inch to prevent text overlap
+    # 6. QR Code Card Blocks (Two side-by-side cards)
+    card_w, card_h = 220, 220
+    card_spacing = 24
+    card_x_left = (width - (card_w * 2 + card_spacing)) / 2.0
+    card_x_right = card_x_left + card_w + card_spacing
+    card_y = height - 6.6 * inch
     
+    # Draw Left Card: Telegram
     # Shadow rect
     c.setFillColor(colors.HexColor("#F1EDE6"))
-    c.roundRect(card_x + 3, card_y - 3, card_w, card_h, 12, fill=1, stroke=0)
-    
+    c.roundRect(card_x_left + 3, card_y - 3, card_w, card_h, 12, fill=1, stroke=0)
     # Main white card
     c.setFillColor(white)
     c.setStrokeColor(gold)
     c.setLineWidth(1)
-    c.roundRect(card_x, card_y, card_w, card_h, 12, fill=1, stroke=1)
+    c.roundRect(card_x_left, card_y, card_w, card_h, 12, fill=1, stroke=1)
     
-    # Generate and draw QR Code
+    # Generate and draw Telegram QR Code
     bot_username = get_bot_username()
     telegram_url = f"https://t.me/{bot_username}?start=v_{business_id}"
-    qr_img_path = generate_qr_code(telegram_url)
-    
-    c.drawImage(qr_img_path, card_x + 30, card_y + 48, width=180, height=180) # Centered QR Code with balanced padding
-    
-    # Cleanup temp image
+    telegram_qr = generate_qr_code(telegram_url)
+    c.drawImage(telegram_qr, card_x_left + 35, card_y + 40, width=150, height=150)
     try:
-        os.unlink(qr_img_path)
+        os.unlink(telegram_qr)
     except Exception:
         pass
         
-    # Card CTA Text
     c.setFillColor(charcoal)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawCentredString(width / 2.0, card_y + 18, "👉 SCAN WITH YOUR PHONE CAMERA 💬")
+    c.setFont("Helvetica-Bold", 8)
+    c.drawCentredString(card_x_left + (card_w / 2.0), card_y + 18, "💬 SCAN FOR TELEGRAM CHAT")
+    
+    # Draw Right Card: WebApp
+    # Shadow rect
+    c.setFillColor(colors.HexColor("#F1EDE6"))
+    c.roundRect(card_x_right + 3, card_y - 3, card_w, card_h, 12, fill=1, stroke=0)
+    # Main white card
+    c.setFillColor(white)
+    c.setStrokeColor(gold)
+    c.setLineWidth(1)
+    c.roundRect(card_x_right, card_y, card_w, card_h, 12, fill=1, stroke=1)
+    
+    # Generate and draw WebApp QR Code
+    webapp_base = os.getenv("WEBAPP_PUBLIC_URL", "http://localhost:8080")
+    webapp_url = f"{webapp_base}/?biz={business_id}"
+    webapp_qr = generate_qr_code(webapp_url)
+    c.drawImage(webapp_qr, card_x_right + 35, card_y + 40, width=150, height=150)
+    try:
+        os.unlink(webapp_qr)
+    except Exception:
+        pass
+        
+    c.setFillColor(charcoal)
+    c.setFont("Helvetica-Bold", 8)
+    c.drawCentredString(card_x_right + (card_w / 2.0), card_y + 18, "🌐 SCAN FOR MOBILE WEB CHAT")
     
     # 7. Instructions / Steps Block (Three columns at the bottom)
-    inst_y = card_y - 1.2 * inch
+    inst_y = card_y - 1.0 * inch
     
     c.setStrokeColor(light_gray)
     c.setLineWidth(1)
@@ -167,9 +189,9 @@ def draw_flyer_pdf(output_path: str, biz_data: dict):
     step_width = (width - 1.6 * inch) / 3.0
     
     steps = [
-        ("Step 1: Point & Scan", "Open your camera app", "Focus directly on the QR code"),
-        ("Step 2: Tap Link", "Click the banner popup", "Open the Telegram app"),
-        ("Step 3: Say Hello", 'Tap "Start" to begin', f"Ask {agent_name} anything!")
+        ("Step 1: Point & Scan", "Open your camera app", "Focus on Telegram or Web QR"),
+        ("Step 2: Tap Link", "Click the banner popup", "Open Telegram or Web Browser"),
+        ("Step 3: Say Hello", 'Tap "Start" or type message', f"Ask {agent_name} anything!")
     ]
     
     for idx, (title, desc1, desc2) in enumerate(steps):
