@@ -1,9 +1,7 @@
 name: Deploy to DigitalOcean Droplet
 
 on:
-  push:
-    branches:
-      - scaled
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -18,6 +16,6 @@ jobs:
           port: 22
           script: |
             cd /root/frontdesk || (git clone https://github.com/arjunmaganti/frontdesk.git /root/frontdesk && cd /root/frontdesk)
-            git checkout scaled
-            git pull origin scaled
+            git checkout main
+            git pull origin main
             docker compose up -d --build
