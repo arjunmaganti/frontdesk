@@ -23,7 +23,8 @@ def get_bot_username() -> str:
 
 def generate_owner_activation_qr(business_id: str):
     """Generates the onboarding activation QR code and link for the salon owner."""
-    output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "owner_qrs"))
+    import tempfile
+    output_dir = os.path.join(tempfile.gettempdir(), "owner_qrs")
     os.makedirs(output_dir, exist_ok=True)
     
     # 1. Construct Link

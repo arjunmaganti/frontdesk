@@ -208,7 +208,7 @@ def draw_flyer_pdf(output_path: str, biz_data: dict):
 
 def generate_all_flyers(specific_id: str = None):
     """Queries Supabase, generates PDF files locally, and uploads them to Supabase Storage."""
-    output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "flyers"))
+    output_dir = os.path.join(tempfile.gettempdir(), "frontdesk_flyers")
     os.makedirs(output_dir, exist_ok=True)
     
     # Initialize Supabase Client for Storage Bucket uploads
