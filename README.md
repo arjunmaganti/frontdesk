@@ -16,6 +16,7 @@ To explore the architecture, product specifications, or operational guides, refe
 4. **[AI Agent Design Specs](docs/agent_design.md)**: Core LangGraph/LangChain orchestrator state machine, intent classifier rules, vector RAG search parameters, prompts, and thread memory checkpointing.
 5. **[Customer Onboarding Manual](docs/onboarding.md)**: Step-by-step instructions on onboarding client profiles, bulk-uploading CSV records, activating business owners, printing flyers, and resolving Telegram human escalations.
 6. **[AI Agent Default Assumptions](agent/assumptions.md)**: System-wide assumptions and fallback behaviors (such as defaulting business hours to 9 AM - 5 PM) when specific storefront data is missing.
+7. **[Mobile Web App Design](docs/webapp.md)**: Product specs, UI/UX layouts, feature parity specifications, database extensions, and Docker configurations for the browser-based chat interface.
 
 ---
 
