@@ -189,6 +189,29 @@ async def delete_business_load(business_id: str, _user: dict = Depends(validate_
 # Web App Receptionist Endpoints (Public/Anonymous Visitor)
 # =====================================================================
 
+@api_app.get("/api/webapp/business/{business_id}")
+async def get_webapp_business_config(business_id: str):
+    try:
+        from src.telegram_bot.session import get_business_config
+        biz = get_business_config(business_id)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        
+        # Return only public parameters to ensure privacy
+        return {
+            "business_id": biz["business_id"],
+            "business_name": biz["business_name"],
+            "agent_name": biz["agent_name"],
+            "website_url": biz.get("website_url"),
+            "business_phone": biz.get("business_phone"),
+            "business_address": biz.get("business_address"),
+            "business_email": biz.get("business_email"),
+            "map_url": biz.get("map_url")
+        }
+    except Exception as e:
+        logger.error(f"Error fetching webapp business config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 class WebSessionRequest(BaseModel):
     business_id: str
     visitor_ip: str = None

@@ -47,17 +47,13 @@ export default function App() {
   const loadBusinessConfig = async (id: string) => {
     setIsLoading(true);
     try {
-      // Query our existing business details endpoint
-      const response = await fetch(`/api/businesses`);
+      const response = await fetch(`/api/webapp/business/${id}`);
       if (response.ok) {
-        const list: BusinessConfig[] = await response.json();
-        const found = list.find(b => b.business_id === id);
-        if (found) {
-          setBizConfig(found);
-          initializeSession(id);
-        } else {
-          console.error("Business not found in records");
-        }
+        const data: BusinessConfig = await response.json();
+        setBizConfig(data);
+        initializeSession(id);
+      } else {
+        console.error("Business not found in records");
       }
     } catch (e) {
       console.error("Failed to load business profile config", e);
