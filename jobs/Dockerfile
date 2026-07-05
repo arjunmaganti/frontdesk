@@ -20,7 +20,7 @@ RUN playwright install-deps chromium
 # Copy crawler, configurations, and crawler utility folders
 COPY agent/ /app/agent/
 COPY jobs/ /app/jobs/
-COPY utility/ /app/utility/
+COPY crawler/ /app/crawler/
 
 # Set Python search paths to resolve utility.* and src.* imports
 ENV PYTHONPATH=/app:/app/agent

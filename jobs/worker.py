@@ -22,7 +22,7 @@ logger = logging.getLogger("FrontdeskWorker")
 try:
     from src.db import get_pg_connection, get_supabase_client
     import src.config as config
-    from utility.crawl import crawl_site
+    from crawler.crawl import crawl_site
 except ImportError as e:
     logger.error(f"Failed to import core modules. Ensure running from project root: {e}")
     sys.exit(1)
@@ -215,7 +215,7 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
                 
             # F. Generate Branded PDF Flyer automatically
             try:
-                from utility.generate_flyers import generate_all_flyers
+                from crawler.generate_flyers import generate_all_flyers
                 generate_all_flyers(specific_id=business_id)
                 logger.info(f"📄 Dynamically generated print-ready PDF flyer for {business_id}.")
             except Exception as pdf_err:

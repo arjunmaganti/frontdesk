@@ -1,6 +1,6 @@
 import sys
 import argparse
-from utility.generate_flyers import generate_all_flyers
+from crawler.generate_flyers import generate_all_flyers
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate PDF Marketing Flyers for registered businesses.")
