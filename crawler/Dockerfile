@@ -17,12 +17,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
-# Copy crawler, configurations, and crawler utility folders
+# Copy crawler and agent configurations
 COPY agent/ /app/agent/
-COPY jobs/ /app/jobs/
 COPY crawler/ /app/crawler/
 
 # Set Python search paths to resolve utility.* and src.* imports
 ENV PYTHONPATH=/app:/app/agent
 
-CMD ["python", "jobs/worker.py"]
+CMD ["python", "crawler/worker.py"]

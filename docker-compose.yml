@@ -20,7 +20,7 @@ services:
   crawler:
     build:
       context: .
-      dockerfile: jobs/Dockerfile
+      dockerfile: crawler/Dockerfile
     container_name: frontdesk-crawler
     restart: always
     env_file:
