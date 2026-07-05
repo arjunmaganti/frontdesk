@@ -1483,6 +1483,27 @@ export default function App() {
                               📷 Activation QR: Generating...
                             </div>
                           )}
+
+                          <a 
+                            href={`${window.location.protocol}//${window.location.hostname}:8080/?biz=${b.business_id}`}
+                            target="_blank" 
+                            rel="noreferrer"
+                            style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '0.5rem', 
+                              padding: '0.75rem 1rem', 
+                              border: '1px solid rgba(167, 139, 250, 0.2)', 
+                              borderRadius: '8px', 
+                              backgroundColor: 'rgba(167, 139, 250, 0.05)', 
+                              color: '#a78bfa', 
+                              textDecoration: 'none', 
+                              fontSize: '0.85rem',
+                              gridColumn: 'span 2'
+                            }}
+                          >
+                            💬 Launch Mobile WebApp Chat ({window.location.hostname}:8080/?biz={b.business_id})
+                          </a>
                         </div>
                       </div>
 
