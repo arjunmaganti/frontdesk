@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ThreadPrimitive, 
-  ComposerPrimitive, 
   useExternalStoreRuntime,
   AssistantRuntimeProvider 
 } from "@assistant-ui/react";
@@ -194,14 +193,6 @@ export default function App() {
       }
     }
   });
-
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (inputText.trim()) {
-      handleSendText(inputText.trim());
-      setInputText('');
-    }
-  };
 
   // Formats text to render links and bold headers beautifully
   const formatText = (text: string) => {
@@ -422,25 +413,38 @@ export default function App() {
                 </div>
               )}
               
-              <ComposerPrimitive.Root className="w-full">
-                <form onSubmit={handleFormSubmit} className="relative flex items-center bg-[#1e1e1c] border border-zinc-800 rounded-2xl px-4 py-2.5 shadow-sm focus-within:border-zinc-700 transition-all">
-                  <input
-                    type="text"
-                    required
-                    value={inputText}
-                    onChange={e => setInputText(e.target.value)}
-                    placeholder={isPaused ? "Reply to staff representative..." : `Ask ${bizConfig.agent_name || 'the front desk'}...`}
-                    className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-0 pr-12"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!inputText.trim() || isSending}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-xl bg-[#2B2A27] text-zinc-400 border border-zinc-800 shadow-sm transition-all hover:text-white hover:bg-zinc-800 active:scale-95 disabled:opacity-30 disabled:scale-100 disabled:hover:bg-[#2B2A27] disabled:hover:text-zinc-400"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                  </button>
-                </form>
-              </ComposerPrimitive.Root>
+              <div className="relative flex items-center bg-[#1e1e1c] border border-zinc-800 rounded-2xl px-4 py-2.5 shadow-sm focus-within:border-zinc-700 transition-all">
+                <input
+                  type="text"
+                  required
+                  value={inputText}
+                  onChange={e => setInputText(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (inputText.trim() && !isSending) {
+                        handleSendText(inputText.trim());
+                        setInputText('');
+                      }
+                    }
+                  }}
+                  placeholder={isPaused ? "Reply to staff representative..." : `Ask ${bizConfig.agent_name || 'the front desk'}...`}
+                  className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-0 pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (inputText.trim() && !isSending) {
+                      handleSendText(inputText.trim());
+                      setInputText('');
+                    }
+                  }}
+                  disabled={!inputText.trim() || isSending}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-xl bg-[#2B2A27] text-zinc-400 border border-zinc-800 shadow-sm transition-all hover:text-white hover:bg-zinc-800 active:scale-95 disabled:opacity-30 disabled:scale-100 disabled:hover:bg-[#2B2A27] disabled:hover:text-zinc-400"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           </footer>
         </ThreadPrimitive.Root>
