@@ -1,9 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  ThreadPrimitive, 
-  useExternalStoreRuntime,
-  AssistantRuntimeProvider 
-} from "@assistant-ui/react";
 import { Send, ArrowRight, MessageSquare, Phone, MapPin, Compass } from 'lucide-react';
 
 interface Message {
@@ -71,7 +66,7 @@ export default function App() {
   const initializeSession = async (bizId: string) => {
     const cacheKey = `frontdesk_session_${bizId}`;
     const cached = localStorage.getItem(cacheKey);
-    
+
     if (cached) {
       setSessionId(cached);
       loadMessages(cached);
@@ -102,7 +97,7 @@ export default function App() {
       if (response.ok) {
         const list: Message[] = await response.json();
         setMessages(list);
-        
+
         // Find latest system message index
         let latestIsPaused = false;
         for (let i = list.length - 1; i >= 0; i--) {
@@ -125,7 +120,7 @@ export default function App() {
   // 5. Polling loop for staff replies
   useEffect(() => {
     if (!sessionId) return;
-    
+
     const interval = setInterval(() => {
       loadMessages(sessionId);
     }, 2000);
@@ -176,23 +171,6 @@ export default function App() {
       setIsSending(false);
     }
   };
-
-  // 7. Bridge message state to assistant-ui ExternalStoreRuntime
-  const runtime = useExternalStoreRuntime({
-    messages: messages.filter(m => m.sender !== 'system'),
-    convertMessage: (m: Message) => ({
-      id: String(m.id),
-      role: m.sender === 'visitor' ? 'user' : 'assistant',
-      content: [{ type: 'text', text: m.message }],
-      createdAt: new Date(m.created_at)
-    }),
-    onNew: async (message) => {
-      if (message.content[0]?.type === 'text') {
-        const text = message.content[0].text;
-        await handleSendText(text);
-      }
-    }
-  });
 
   // Formats text to render links and bold headers beautifully
   const formatText = (text: string) => {
@@ -268,8 +246,7 @@ export default function App() {
   }
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <div className="flex h-screen flex-col bg-[#191919] font-sans text-white">
+    <div className="flex h-screen flex-col bg-[#191919] font-sans text-white">
         {/* Header Profile Bar */}
         <header className="flex items-center justify-between border-b border-white/5 bg-[#1e1e1c]/90 px-6 py-3.5 backdrop-blur-md shadow-sm z-10">
           <div className="flex items-center space-x-3.5">
@@ -284,7 +261,7 @@ export default function App() {
               </p>
             </div>
           </div>
-          
+
           {/* Quick Contact Buttons */}
           <div className="flex items-center space-x-1.5">
             {bizConfig.business_phone && (
@@ -300,8 +277,8 @@ export default function App() {
           </div>
         </header>
 
-        {/* assistant-ui Thread Primitive Container */}
-        <ThreadPrimitive.Root className="flex-1 flex flex-col overflow-hidden">
+        {/* Chat Thread Viewport Container */}
+        <div className="flex-1 flex flex-col overflow-hidden">
           <main className="flex-1 overflow-y-auto py-6">
             <div className="max-w-2xl mx-auto w-full px-4 space-y-6">
               {messages.length === 0 && (
@@ -317,61 +294,52 @@ export default function App() {
               )}
 
               {/* Loop through messages */}
-              <ThreadPrimitive.Messages
-                components={{
-                  Message: ({ message }: any) => {
-                    if (!message) return null;
-                    const m = messages.find(x => x && x.id && String(x.id) === message.id);
-                    const isMe = message.role === 'user';
-                    const senderName = isMe ? 'You' : (m?.sender === 'staff' ? 'Staff' : (bizConfig.agent_name || 'Assistant'));
-                    
-                    return (
-                      <div className={`flex items-start gap-3 my-4 ${isMe ? 'flex-row-reverse' : ''}`}>
-                        {/* Avatar */}
-                        {!isMe ? (
-                          <div className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full text-xs font-bold font-serif ${
-                            m?.sender === 'staff'
-                              ? 'bg-amber-600/20 text-amber-500 border border-amber-500/30'
-                              : 'bg-[#C5A880]/20 text-[#C5A880] border border-[#C5A880]/30'
-                          }`}>
-                            {m?.sender === 'staff' ? 'S' : bizConfig.business_name.substring(0, 1)}
-                          </div>
-                        ) : (
-                          <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-zinc-800 text-zinc-400 text-xs font-semibold border border-zinc-700/50">
-                            U
-                          </div>
-                        )}
-
-                        <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
-                          {/* Name header */}
-                          <div className="flex items-center gap-1.5 mb-1 px-1">
-                            <span className="text-[11px] font-medium text-zinc-400">{senderName}</span>
-                            <span className="text-[9px] text-zinc-500">
-                              {message.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-
-                          {/* Chat Bubble container (Claude-style) */}
-                          <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                            isMe
-                              ? 'bg-[#2B2A27] border border-zinc-800 text-zinc-100 rounded-tr-none'
-                              : m?.sender === 'staff'
-                                ? 'bg-amber-950/20 border border-amber-900/30 text-amber-100 rounded-tl-none shadow-sm'
-                                : 'bg-[#222222]/60 border border-zinc-800/80 text-zinc-200 rounded-tl-none'
-                          }`}>
-                            {message.content.map((part: any, index: number) => {
-                              if (part.type === 'text') {
-                                return <span key={index}>{formatText(part.text)}</span>;
-                              }
-                              return null;
-                            })}
-                          </div>
-                        </div>
+              {messages.filter(m => m.sender !== 'system').map((m, idx) => {
+                const isMe = m.sender === 'visitor';
+                const senderName = isMe ? 'You' : (m.sender === 'staff' ? 'Staff' : (bizConfig.agent_name || 'Assistant'));
+                
+                return (
+                  <div key={m.id || idx} className={`flex items-start gap-3 my-4 ${isMe ? 'flex-row-reverse' : ''}`}>
+                    {/* Avatar */}
+                    {!isMe ? (
+                      <div className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full text-xs font-bold font-serif ${
+                        m.sender === 'staff'
+                          ? 'bg-amber-600/20 text-amber-500 border border-amber-500/30'
+                          : 'bg-[#C5A880]/20 text-[#C5A880] border border-[#C5A880]/30'
+                      }`}>
+                        {m.sender === 'staff' ? 'S' : (bizConfig.business_name || 'Salon').substring(0, 1)}
                       </div>
-                    );
-                  }
-                }}
-              />
+                    ) : (
+                      <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-zinc-800 text-zinc-400 text-xs font-semibold border border-zinc-700/50">
+                        U
+                      </div>
+                    )}
+
+                    <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
+                      {/* Name header */}
+                      <div className="flex items-center gap-1.5 mb-1 px-1">
+                        <span className="text-[11px] font-medium text-zinc-400">{senderName}</span>
+                        <span className="text-[9px] text-zinc-500">
+                          {m.created_at
+                            ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      {/* Chat Bubble container (Claude-style) */}
+                      <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                        isMe
+                          ? 'bg-[#2B2A27] border border-zinc-800 text-zinc-100 rounded-tr-none'
+                          : m.sender === 'staff'
+                            ? 'bg-amber-950/20 border border-amber-900/30 text-amber-100 rounded-tl-none shadow-sm'
+                            : 'bg-[#222222]/60 border border-zinc-800/80 text-zinc-200 rounded-tl-none'
+                      }`}>
+                        {formatText(m.message)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
 
               {/* Render any system/resolution notifications manually outside RAG bubbles */}
               {messages.filter(m => m.sender === 'system').map(sysMsg => (
@@ -412,7 +380,7 @@ export default function App() {
                   Staff connected. Your messages are relayed directly.
                 </div>
               )}
-              
+
               <div className="relative flex items-center bg-[#1e1e1c] border border-zinc-800 rounded-2xl px-4 py-2.5 shadow-sm focus-within:border-zinc-700 transition-all">
                 <input
                   type="text"
@@ -447,8 +415,7 @@ export default function App() {
               </div>
             </div>
           </footer>
-        </ThreadPrimitive.Root>
+        </div>
       </div>
-    </AssistantRuntimeProvider>
   );
 }
