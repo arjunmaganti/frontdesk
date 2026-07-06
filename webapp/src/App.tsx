@@ -32,6 +32,7 @@ export default function App() {
   const [slugInput, setSlugInput] = useState<string>('');
   const [viewportHeight, setViewportHeight] = useState<string>('100vh');
   const [isKeyboardOpen, setIsKeyboardOpen] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +57,16 @@ export default function App() {
       visualViewport.removeEventListener('resize', handleResize);
       visualViewport.removeEventListener('scroll', handleResize);
     };
+  }, []);
+
+  // Screen size media query listener for mobile layouts
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   // 1. Resolve business ID from URL parameter e.g. ?biz=hair-by-gabie-g
@@ -275,37 +286,87 @@ export default function App() {
       className="flex flex-col bg-[#191919] font-sans text-white overflow-hidden" 
       style={{ height: viewportHeight }}
     >
-        {/* Header Profile Bar */}
-        <header className="flex items-center justify-between border-b border-white/5 bg-[#1e1e1c]/90 px-6 py-3.5 backdrop-blur-md shadow-sm z-10">
-          <div className="flex items-center space-x-3.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#C5A880]/15 text-[#C5A880] font-serif font-bold text-base border border-[#C5A880]/30 shadow-inner">
-              {bizConfig.business_name.substring(0, 1)}
-            </div>
-            <div>
-              <h1 className="font-serif font-semibold text-sm leading-tight tracking-wide text-gray-200">{bizConfig.business_name}</h1>
-              <p className="text-xs font-light text-gray-400 flex items-center mt-0.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#C5A880] inline-block mr-1.5 animate-pulse"></span>
-                {bizConfig.agent_name || "AI Assistant"}
-              </p>
+      {/* Header Profile Bar */}
+      <header className="flex items-center justify-between border-b border-white/5 bg-[#1e1e1c]/90 px-6 py-3.5 backdrop-blur-md shadow-sm z-10">
+        <div className="flex items-center space-x-3.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#C5A880]/15 text-[#C5A880] font-serif font-bold text-base border border-[#C5A880]/30 shadow-inner">
+            {bizConfig.business_name.substring(0, 1)}
+          </div>
+          <div>
+            <h1 className="font-serif font-semibold text-sm leading-tight tracking-wide text-gray-200">{bizConfig.business_name}</h1>
+            <p className="text-xs font-light text-gray-400 flex items-center mt-0.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#C5A880] inline-block mr-1.5 animate-pulse"></span>
+              {bizConfig.agent_name || "AI Assistant"}
+            </p>
+          </div>
+        </div>
+
+        {/* Quick Contact Buttons */}
+        <div className="flex items-center space-x-1.5">
+          {bizConfig.business_phone && (
+            <a href={`tel:${bizConfig.business_phone}`} className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
+              <Phone className="h-4 w-4" />
+            </a>
+          )}
+          {bizConfig.map_url && (
+            <a href={bizConfig.map_url} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
+              <MapPin className="h-4 w-4" />
+            </a>
+          )}
+        </div>
+      </header>
+
+      {/* Main split grid */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Side Panel - Desktop Only */}
+        <aside className="hidden md:flex md:w-80 lg:w-96 flex-col border-r border-white/5 bg-[#1a1a19] overflow-y-auto p-6 space-y-6">
+          <div className="space-y-2">
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">About the business</h2>
+            <div className="rounded-xl border border-white/5 bg-white/2 p-4 space-y-3.5">
+              <div>
+                <span className="block text-[11px] text-zinc-400 font-medium">Business Name</span>
+                <span className="text-sm text-zinc-200">{bizConfig.business_name}</span>
+              </div>
+              {bizConfig.website_url && (
+                <div>
+                  <span className="block text-[11px] text-zinc-400 font-medium">Website</span>
+                  <a href={bizConfig.website_url} target="_blank" rel="noreferrer" className="text-sm text-[#C5A880] hover:underline break-all">
+                    {bizConfig.website_url}
+                  </a>
+                </div>
+              )}
+              {bizConfig.business_phone && (
+                <div>
+                  <span className="block text-[11px] text-zinc-400 font-medium">Phone</span>
+                  <a href={`tel:${bizConfig.business_phone}`} className="text-sm text-zinc-200 hover:underline">
+                    {bizConfig.business_phone}
+                  </a>
+                </div>
+              )}
+              {bizConfig.business_address && (
+                <div>
+                  <span className="block text-[11px] text-zinc-400 font-medium">Address</span>
+                  <span className="text-sm text-zinc-200 block leading-relaxed">{bizConfig.business_address}</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Quick Contact Buttons */}
-          <div className="flex items-center space-x-1.5">
-            {bizConfig.business_phone && (
-              <a href={`tel:${bizConfig.business_phone}`} className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
-                <Phone className="h-4 w-4" />
-              </a>
-            )}
-            {bizConfig.map_url && (
-              <a href={bizConfig.map_url} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
-                <MapPin className="h-4 w-4" />
-              </a>
-            )}
+          <div className="space-y-2">
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Host Assistant</h2>
+            <div className="rounded-xl border border-white/5 bg-white/2 p-4 flex items-center space-x-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#C5A880]/10 text-[#C5A880] border border-[#C5A880]/20 font-serif font-semibold">
+                {bizConfig.agent_name ? bizConfig.agent_name.substring(0, 1) : 'S'}
+              </div>
+              <div>
+                <span className="block text-sm font-medium text-zinc-200">{bizConfig.agent_name || "Sarah"}</span>
+                <span className="block text-[11px] text-zinc-400">Virtual Receptionist</span>
+              </div>
+            </div>
           </div>
-        </header>
+        </aside>
 
-        {/* Chat Thread Viewport Container */}
+        {/* Right Side / Mobile Full View: Chat Space */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <main className="flex-1 overflow-y-auto py-6">
             <div className="max-w-2xl mx-auto w-full px-4 space-y-6">
@@ -314,9 +375,13 @@ export default function App() {
                   <div className="h-14 w-14 rounded-full bg-[#C5A880]/10 flex items-center justify-center text-[#C5A880] border border-[#C5A880]/20 mb-4 shadow-sm">
                     <MessageSquare className="h-6 w-6" />
                   </div>
-                  <h3 className="font-serif font-medium text-lg text-gray-200 tracking-wide">Welcome to {bizConfig.business_name}</h3>
-                  <p className="text-sm text-gray-400 max-w-sm mt-2 leading-relaxed">
-                    Hello! I'm {bizConfig.agent_name || "Sarah"}, your virtual front desk host. Ask me about pricing, schedules, address location, or salon offerings!
+                  <h3 className="font-serif font-medium text-lg text-gray-200 tracking-wide">
+                    {isMobile ? "Welcome" : `Welcome to ${bizConfig.business_name}`}
+                  </h3>
+                  <p className="text-base md:text-sm text-gray-400 max-w-sm mt-2 leading-relaxed">
+                    {isMobile 
+                      ? `Ask me anything about ${bizConfig.business_name}.` 
+                      : `Hello! I'm ${bizConfig.agent_name || "Sarah"}, your virtual front desk host. Ask me about pricing, schedules, address location, or salon offerings!`}
                   </p>
                 </div>
               )}
@@ -330,7 +395,7 @@ export default function App() {
                   <div key={m.id || idx} className={`flex items-start gap-3 my-4 ${isMe ? 'flex-row-reverse' : ''}`}>
                     {/* Avatar */}
                     {!isMe ? (
-                      <div className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full text-xs font-bold font-serif ${
+                      <div className={`flex h-9 w-9 md:h-8 md:w-8 shrink-0 select-none items-center justify-center rounded-full text-xs md:text-[11px] font-bold font-serif ${
                         m.sender === 'staff'
                           ? 'bg-amber-600/20 text-amber-500 border border-amber-500/30'
                           : 'bg-[#C5A880]/20 text-[#C5A880] border border-[#C5A880]/30'
@@ -338,16 +403,16 @@ export default function App() {
                         {m.sender === 'staff' ? 'S' : (bizConfig.business_name || 'Salon').substring(0, 1)}
                       </div>
                     ) : (
-                      <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-zinc-800 text-zinc-400 text-xs font-semibold border border-zinc-700/50">
+                      <div className="flex h-9 w-9 md:h-8 md:w-8 shrink-0 select-none items-center justify-center rounded-full bg-zinc-800 text-zinc-400 text-xs md:text-[11px] font-semibold border border-zinc-700/50">
                         U
                       </div>
                     )}
 
-                    <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
+                    <div className={`flex flex-col max-w-[85%] md:max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
                       {/* Name header */}
                       <div className="flex items-center gap-1.5 mb-1 px-1">
-                        <span className="text-[11px] font-medium text-zinc-400">{senderName}</span>
-                        <span className="text-[9px] text-zinc-500">
+                        <span className="text-xs md:text-[11px] font-medium text-zinc-400">{senderName}</span>
+                        <span className="text-[10px] md:text-[9px] text-zinc-500">
                           {m.created_at
                             ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                             : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -355,7 +420,7 @@ export default function App() {
                       </div>
 
                       {/* Chat Bubble container (Claude-style) */}
-                      <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                      <div className={`rounded-2xl px-4 py-3 text-base md:text-sm leading-relaxed whitespace-pre-wrap ${
                         isMe
                           ? 'bg-[#2B2A27] border border-zinc-800 text-zinc-100 rounded-tr-none'
                           : m.sender === 'staff'
@@ -380,12 +445,12 @@ export default function App() {
 
               {isSending && (
                 <div className="flex items-start gap-3 my-4">
-                  <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-[#C5A880]/20 text-[#C5A880] text-xs font-bold font-serif border border-[#C5A880]/30">
+                  <div className="flex h-9 w-9 md:h-8 md:w-8 shrink-0 select-none items-center justify-center rounded-full bg-[#C5A880]/20 text-[#C5A880] text-xs font-bold font-serif border border-[#C5A880]/30">
                     {bizConfig.business_name.substring(0, 1)}
                   </div>
                   <div className="flex flex-col items-start">
                     <div className="flex items-center gap-1.5 mb-1 px-1">
-                      <span className="text-[11px] font-medium text-zinc-400">{bizConfig.agent_name || 'Assistant'}</span>
+                      <span className="text-xs md:text-[11px] font-medium text-zinc-400">{bizConfig.agent_name || 'Assistant'}</span>
                     </div>
                     <div className="rounded-2xl rounded-tl-none px-4 py-3 bg-[#222222]/60 border border-zinc-800/80 flex space-x-1.5 items-center">
                       <span className="h-1.5 w-1.5 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: '0ms' }}></span>
@@ -430,7 +495,7 @@ export default function App() {
                     }
                   }}
                   placeholder={isPaused ? "Reply to staff representative..." : `Ask ${bizConfig.agent_name || 'the front desk'}...`}
-                  className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-0 pr-12"
+                  className="flex-1 bg-transparent text-base md:text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-0 pr-12"
                 />
                 <button
                   type="button"
@@ -450,5 +515,6 @@ export default function App() {
           </footer>
         </div>
       </div>
+    </div>
   );
 }
