@@ -30,8 +30,33 @@ export default function App() {
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [slugInput, setSlugInput] = useState<string>('');
+  const [viewportHeight, setViewportHeight] = useState<string>('100vh');
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState<boolean>(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Dynamic visual viewport height listener for mobile keyboards
+  useEffect(() => {
+    const visualViewport = window.visualViewport;
+    if (!visualViewport) return;
+
+    const handleResize = () => {
+      const height = visualViewport.height;
+      setViewportHeight(`${height}px`);
+      setIsKeyboardOpen(height < window.innerHeight * 0.85);
+    };
+
+    visualViewport.addEventListener('resize', handleResize);
+    visualViewport.addEventListener('scroll', handleResize);
+    
+    // Initial sync
+    handleResize();
+
+    return () => {
+      visualViewport.removeEventListener('resize', handleResize);
+      visualViewport.removeEventListener('scroll', handleResize);
+    };
+  }, []);
 
   // 1. Resolve business ID from URL parameter e.g. ?biz=hair-by-gabie-g
   useEffect(() => {
@@ -246,7 +271,10 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-[#191919] font-sans text-white">
+    <div 
+      className="flex flex-col bg-[#191919] font-sans text-white overflow-hidden" 
+      style={{ height: viewportHeight }}
+    >
         {/* Header Profile Bar */}
         <header className="flex items-center justify-between border-b border-white/5 bg-[#1e1e1c]/90 px-6 py-3.5 backdrop-blur-md shadow-sm z-10">
           <div className="flex items-center space-x-3.5">
@@ -371,8 +399,8 @@ export default function App() {
             <div ref={chatEndRef} />
           </main>
 
-          {/* assistant-ui Composer Input Box (Claude-style centered floating footer) */}
-          <footer className="w-full bg-[#191919] px-4 pb-5 pt-2">
+          {/* Composer Input Box (Claude-style centered floating footer) */}
+          <footer className={`w-full bg-[#191919] px-4 pt-2 transition-all ${isKeyboardOpen ? 'pb-2' : 'pb-5'}`}>
             <div className="max-w-2xl mx-auto w-full">
               {isPaused && (
                 <div className="mb-2.5 text-center text-xs text-amber-400 flex items-center justify-center">
@@ -387,6 +415,11 @@ export default function App() {
                   required
                   value={inputText}
                   onChange={e => setInputText(e.target.value)}
+                  onFocus={() => {
+                    setTimeout(() => {
+                      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                    }, 200);
+                  }}
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
