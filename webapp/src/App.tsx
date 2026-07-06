@@ -195,13 +195,6 @@ export default function App() {
     }
   });
 
-  const handleSlugSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (slugInput.trim()) {
-      window.location.href = `${window.location.origin}/?biz=${encodeURIComponent(slugInput.trim())}`;
-    }
-  };
-
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputText.trim()) {
@@ -247,7 +240,7 @@ export default function App() {
             </p>
           </div>
 
-          <form onSubmit={handleSlugSubmit} className="mt-6 space-y-4">
+          <div className="mt-6 space-y-4">
             <div>
               <input
                 type="text"
@@ -256,15 +249,28 @@ export default function App() {
                 onChange={e => setSlugInput(e.target.value)}
                 placeholder="e.g. hair-by-gabie-g"
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-[#00D2FF] focus:outline-none focus:ring-1 focus:ring-[#00D2FF]"
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (slugInput.trim()) {
+                      window.location.href = `${window.location.origin}/?biz=${encodeURIComponent(slugInput.trim())}`;
+                    }
+                  }
+                }}
               />
             </div>
             <button
-              type="submit"
+              type="button"
+              onClick={() => {
+                if (slugInput.trim()) {
+                  window.location.href = `${window.location.origin}/?biz=${encodeURIComponent(slugInput.trim())}`;
+                }
+              }}
               className="flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#00D2FF] to-[#0080FF] py-3 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-[1.02]"
             >
               Start Chat <ArrowRight className="ml-2 h-4 w-4" />
             </button>
-          </form>
+          </div>
         </div>
       </div>
     );
