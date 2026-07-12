@@ -21,7 +21,11 @@ BUSINESS_ADDRESS = os.getenv("BUSINESS_ADDRESS", "")
 MAP_URL = os.getenv("MAP_URL", "")
 WEBSITE_URL = os.getenv("WEBSITE_URL", "")
 BUSINESS_TIMEZONE = os.getenv("BUSINESS_TIMEZONE", "America/Los_Angeles")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+import re
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+# Clean URL of rest/v1 or trailing slashes
+SUPABASE_URL = re.sub(r'/rest/v1/?$', '', SUPABASE_URL).rstrip('/')
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD", "")
 SUPABASE_DB_HOST = os.getenv("SUPABASE_DB_HOST", "aws-1-us-west-1.pooler.supabase.com")
