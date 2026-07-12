@@ -155,7 +155,7 @@ function FrontdeskLogo() {
   );
 }
 
-const API_BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000/api";
+const API_BASE = import.meta.env.VITE_BACKEND_URL || "/api";
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
