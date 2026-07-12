@@ -273,11 +273,12 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!session) return;
     loadData();
     // Auto-refresh stats every 15 seconds
     const interval = setInterval(loadData, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [session]);
 
   // Simulator fetch functions
   const loadChatHistory = async (businessId: string, currentThreadId: string) => {
