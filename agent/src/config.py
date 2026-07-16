@@ -36,6 +36,10 @@ DAILY_MESSAGE_CAP = int(os.getenv("DAILY_MESSAGE_CAP", "200"))
 USER_RATE_LIMIT = int(os.getenv("USER_RATE_LIMIT", "5"))
 USER_RATE_WINDOW = int(os.getenv("USER_RATE_WINDOW", "60"))
 
+# Cal.com Scheduling Configuration
+CAL_API_KEY = os.getenv("CAL_API_KEY")
+CAL_EVENT_TYPE_ID = os.getenv("CAL_EVENT_TYPE_ID", "6330967")
+
 # Verify essential credentials
 def validate_config():
     if not TELEGRAM_BOT_TOKEN:
