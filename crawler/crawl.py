@@ -33,6 +33,15 @@ async def crawl_site_async(start_url, out_dir, max_pages, max_depth):
     
     visited = set()
     queue = [(start_url, 0)]  # Queue contains tuples of (url, depth)
+    
+    # Pre-populate queue with common sub-pages as fallback for SPAs with non-standard navigation menus
+    base_url = f"{parsed_start.scheme}://{domain}"
+    common_paths = ["/services", "/about", "/about-us", "/contact", "/contact-us", "/portfolio", "/pricing"]
+    for path in common_paths:
+        fallback_url = base_url + path
+        if fallback_url.rstrip('/') != start_url.rstrip('/'):
+            queue.append((fallback_url, 1))
+            
     pages_crawled = 0
     
     print(f"🕸️ Starting crawl of '{start_url}' using Crawl4AI (Domain: {domain})")
