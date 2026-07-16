@@ -36,6 +36,10 @@ def run_migration():
                 );
             """)
             
+            # 3. Reload Supabase PostgREST schema cache
+            print("   Reloading Supabase schema cache...")
+            cur.execute("NOTIFY pgrst, 'reload schema';")
+            
             conn.commit()
             print("🎉 Database migrations completed successfully!")
     except Exception as e:
