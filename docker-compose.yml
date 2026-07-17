@@ -37,7 +37,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_SUPABASE_URL: ${SUPABASE_URL}
-        VITE_SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+        VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
     container_name: frontdesk-admin
     restart: always
     ports:
