@@ -1,0 +1,35 @@
+name: Pull Env From Droplet
+
+on:
+  push:
+    branches:
+      - temp-pull-env
+
+jobs:
+  pull-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and Dump Env
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "=== Listing files in /root/frontdesk ==="
+            ls -la /root/frontdesk
+            
+            echo "=== Checking /root/frontdesk/.env-prod ==="
+            if [ -f /root/frontdesk/.env-prod ]; then
+              cat /root/frontdesk/.env-prod | base64
+            else
+              echo ".env-prod not found"
+            fi
+            
+            echo "=== Checking /root/frontdesk/.env ==="
+            if [ -f /root/frontdesk/.env ]; then
+              cat /root/frontdesk/.env | base64
+            else
+              echo ".env not found"
+            fi
