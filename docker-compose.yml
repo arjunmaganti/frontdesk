@@ -41,7 +41,7 @@ services:
     container_name: frontdesk-admin
     restart: always
     ports:
-      - "80:80"
+      - "8081:80"
     logging:
       driver: "json-file"
       options:
