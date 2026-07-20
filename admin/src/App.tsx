@@ -13,7 +13,8 @@ import {
   Bot,
   Trash2,
   Search,
-  ExternalLink
+  ExternalLink,
+  Sparkles
 } from 'lucide-react';
 import {
   AreaChart,
@@ -202,6 +203,11 @@ export default function App() {
   const [csvMsg, setCsvMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Custom Raw Text Dump states
+  const [onboardMode, setOnboardMode] = useState<'form' | 'dump'>('form');
+  const [textDump, setTextDump] = useState<string>('');
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
   // Auth Listener
   useEffect(() => {
@@ -405,9 +411,7 @@ export default function App() {
     if (field === 'business_name') {
       if (!value.trim()) err = 'Business Name is required.';
     } else if (field === 'website_url') {
-      if (!value.trim()) {
-        err = 'Website URL is required.';
-      } else {
+      if (value.trim()) {
         try {
           new URL(value);
         } catch {
@@ -437,9 +441,7 @@ export default function App() {
     // Validate all fields on submit
     const nameErr = !newBusiness.business_name.trim() ? 'Business Name is required.' : '';
     let webErr = '';
-    if (!newBusiness.website_url.trim()) {
-      webErr = 'Website URL is required.';
-    } else {
+    if (newBusiness.website_url.trim()) {
       try {
         new URL(newBusiness.website_url);
       } catch {
@@ -468,6 +470,7 @@ export default function App() {
       return;
     }
 
+    setSubmitting(true);
     try {
       // Ingest into business_load via Proxy API
       const res = await authenticatedFetch(`${API_BASE}/business-load`, {
@@ -491,7 +494,11 @@ export default function App() {
         throw new Error(errorData.detail || "Failed to register business");
       }
 
-      setFormMsg({ type: 'success', text: `Successfully registered ${newBusiness.business_name}! Scraper triggered.` });
+      const isCrawlTriggered = !!newBusiness.website_url.trim();
+      setFormMsg({ 
+        type: 'success', 
+        text: `Successfully registered ${newBusiness.business_name}!${isCrawlTriggered ? ' Scraper triggered.' : ''}` 
+      });
       setErrors({});
       setNewBusiness({
         business_id: '',
@@ -506,6 +513,49 @@ export default function App() {
       loadData();
     } catch (err: any) {
       setFormMsg({ type: 'error', text: `Failed: ${err.message}` });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDumpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormMsg(null);
+    
+    if (!textDump.trim()) {
+      setFormMsg({ type: 'error', text: 'Please paste some text/markdown first.' });
+      return;
+    }
+    
+    setSubmitting(true);
+    try {
+      const res = await authenticatedFetch(`${API_BASE}/business-load/parse-text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textDump })
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to parse text dump");
+      }
+      
+      const resData = await res.json();
+      const parsedBiz = resData.data || {};
+      const parsedBizName = parsedBiz.business_name || 'Business';
+      const isCrawlTriggered = !!(parsedBiz.website_url || '').trim();
+      
+      setFormMsg({ 
+        type: 'success', 
+        text: `Successfully parsed and registered "${parsedBizName}"!${isCrawlTriggered ? ' Onboarding pipeline and scraper triggered.' : ' Registered successfully.'}` 
+      });
+      
+      setTextDump(''); // Clear the textarea
+      loadData(); // Refresh the dashboard/registry data
+    } catch (err: any) {
+      setFormMsg({ type: 'error', text: `Parsing failed: ${err.message}` });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -912,124 +962,251 @@ export default function App() {
             <div className="section-card">
               <h3 className="section-title">Register Single Business</h3>
               
+              {/* Mode Toggle */}
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-card)', paddingBottom: '0.75rem' }}>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setOnboardMode('form');
+                    setFormMsg(null);
+                  }}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    fontSize: '0.85rem',
+                    borderRadius: '6px',
+                    border: '1px solid ' + (onboardMode === 'form' ? 'var(--primary)' : 'transparent'),
+                    backgroundColor: onboardMode === 'form' ? 'var(--primary-glow)' : 'transparent',
+                    color: onboardMode === 'form' ? '#00D2FF' : 'var(--text-mute)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    fontWeight: onboardMode === 'form' ? 600 : 400
+                  }}
+                >
+                  Individual Fields
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setOnboardMode('dump');
+                    setFormMsg(null);
+                  }}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    fontSize: '0.85rem',
+                    borderRadius: '6px',
+                    border: '1px solid ' + (onboardMode === 'dump' ? 'var(--primary)' : 'transparent'),
+                    backgroundColor: onboardMode === 'dump' ? 'var(--primary-glow)' : 'transparent',
+                    color: onboardMode === 'dump' ? '#00D2FF' : 'var(--text-mute)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    fontWeight: onboardMode === 'dump' ? 600 : 400
+                  }}
+                >
+                  Paste Text Dump
+                </button>
+              </div>
+
               {formMsg && (
                 <div style={{ padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', backgroundColor: formMsg.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: formMsg.type === 'success' ? '#10B981' : '#EF4444', fontSize: '0.9rem' }}>
                   {formMsg.text}
                 </div>
               )}
 
-              <form onSubmit={handleSingleSubmit} noValidate>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Business Name <span style={{ color: '#EF4444' }}>*</span></label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. DM Hair Care"
-                      value={newBusiness.business_name}
-                      onChange={(e) => {
-                        const name = e.target.value;
-                        const slug = name
-                          .toLowerCase()
-                          .replace(/[^\w\s-]/g, '')
-                          .trim()
-                          .replace(/[\s_]+/g, '-')
-                          .replace(/-+/g, '-');
-                        setNewBusiness({ 
-                          ...newBusiness, 
-                          business_name: name,
-                          business_id: slug
-                        });
-                      }}
-                      onBlur={(e) => validateField('business_name', e.target.value)}
+              {onboardMode === 'form' ? (
+                <form onSubmit={handleSingleSubmit} noValidate>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Business Name <span style={{ color: '#EF4444' }}>*</span></label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. DM Hair Care"
+                        value={newBusiness.business_name}
+                        onChange={(e) => {
+                          const name = e.target.value;
+                          const slug = name
+                            .toLowerCase()
+                            .replace(/[^\w\s-]/g, '')
+                            .trim()
+                            .replace(/[\s_]+/g, '-')
+                            .replace(/-+/g, '-');
+                          setNewBusiness({ 
+                            ...newBusiness, 
+                            business_name: name,
+                            business_id: slug
+                          });
+                        }}
+                        onBlur={(e) => validateField('business_name', e.target.value)}
+                        required
+                        disabled={submitting}
+                      />
+                      {errors.business_name && (
+                        <span style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '0.35rem', display: 'block' }}>
+                          {errors.business_name}
+                        </span>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label>Website URL (To Scrape)</label>
+                      <input 
+                        type="url" 
+                        placeholder="https://example.com"
+                        value={newBusiness.website_url}
+                        onChange={(e) => setNewBusiness({ ...newBusiness, website_url: e.target.value })}
+                        onBlur={(e) => validateField('website_url', e.target.value)}
+                        disabled={submitting}
+                      />
+                      {errors.website_url && (
+                        <span style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '0.35rem', display: 'block' }}>
+                          {errors.website_url}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>AI Assistant Name</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Sarah"
+                        value={newBusiness.agent_name}
+                        onChange={(e) => setNewBusiness({ ...newBusiness, agent_name: e.target.value })}
+                        disabled={submitting}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Verified Phone</label>
+                      <input 
+                        type="text" 
+                        placeholder="+14080001111"
+                        value={newBusiness.business_phone}
+                        onChange={(e) => setNewBusiness({ ...newBusiness, business_phone: e.target.value })}
+                        onBlur={(e) => {
+                          const formatted = formatPhoneNumber(e.target.value);
+                          setNewBusiness(prev => ({ ...prev, business_phone: formatted }));
+                          validateField('business_phone', formatted);
+                        }}
+                        disabled={submitting}
+                      />
+                      {errors.business_phone && (
+                        <span style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '0.35rem', display: 'block' }}>
+                          {errors.business_phone}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Verified Email</label>
+                      <input 
+                        type="email" 
+                        placeholder="contact@example.com"
+                        value={newBusiness.business_email}
+                        onChange={(e) => setNewBusiness({ ...newBusiness, business_email: e.target.value })}
+                        onBlur={(e) => validateField('business_email', e.target.value)}
+                        disabled={submitting}
+                      />
+                      {errors.business_email && (
+                        <span style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '0.35rem', display: 'block' }}>
+                          {errors.business_email}
+                        </span>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label>Verified Address</label>
+                      <input 
+                        type="text" 
+                        placeholder="123 Business Way, San Jose, CA"
+                        value={newBusiness.business_address}
+                        onChange={(e) => setNewBusiness({ ...newBusiness, business_address: e.target.value })}
+                        disabled={submitting}
+                      />
+                    </div>
+                  </div>
+
+                  <button 
+                    type="submit" 
+                    className="submit-btn" 
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      gap: '0.5rem', 
+                      marginTop: '1rem',
+                      width: '100%'
+                    }}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader size={18} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                        Registering...
+                      </>
+                    ) : (
+                      <>
+                        Register Business
+                        <ArrowRight size={18} />
+                      </>
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleDumpSubmit}>
+                  <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span>Raw Business Text Dump <span style={{ color: '#EF4444' }}>*</span></span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-mute)' }}>Markdown supported</span>
+                    </label>
+                    <textarea
+                      placeholder={`Paste markdown or unstructured text details here.\nE.g.:\nBusiness Name: Glow Hair Studio\nWebsite: https://glowhairsalon.com\nPhone: +1 (408) 555-1212\nEmail: contact@glowhairsalon.com\nAddress: 123 Salon Way, San Jose, CA\nAgent: Sarah`}
+                      value={textDump}
+                      onChange={(e) => setTextDump(e.target.value)}
                       required
-                    />
-                    {errors.business_name && (
-                      <span style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '0.35rem', display: 'block' }}>
-                        {errors.business_name}
-                      </span>
-                    )}
-                  </div>
-                  <div className="form-group">
-                    <label>Website URL (To Scrape) <span style={{ color: '#EF4444' }}>*</span></label>
-                    <input 
-                      type="url" 
-                      placeholder="https://example.com"
-                      value={newBusiness.website_url}
-                      onChange={(e) => setNewBusiness({ ...newBusiness, website_url: e.target.value })}
-                      onBlur={(e) => validateField('website_url', e.target.value)}
-                      required
-                    />
-                    {errors.website_url && (
-                      <span style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '0.35rem', display: 'block' }}>
-                        {errors.website_url}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>AI Assistant Name</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Sarah"
-                      value={newBusiness.agent_name}
-                      onChange={(e) => setNewBusiness({ ...newBusiness, agent_name: e.target.value })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Verified Phone</label>
-                    <input 
-                      type="text" 
-                      placeholder="+14080001111"
-                      value={newBusiness.business_phone}
-                      onChange={(e) => setNewBusiness({ ...newBusiness, business_phone: e.target.value })}
-                      onBlur={(e) => {
-                        const formatted = formatPhoneNumber(e.target.value);
-                        setNewBusiness(prev => ({ ...prev, business_phone: formatted }));
-                        validateField('business_phone', formatted);
+                      rows={10}
+                      style={{
+                        width: '100%',
+                        padding: '0.85rem',
+                        fontSize: '0.85rem',
+                        lineHeight: '1.5',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-card)',
+                        backgroundColor: 'rgba(0,0,0,0.2)',
+                        color: 'var(--text-main)',
+                        resize: 'vertical',
+                        fontFamily: 'inherit',
+                        minHeight: '180px'
                       }}
+                      disabled={submitting}
                     />
-                    {errors.business_phone && (
-                      <span style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '0.35rem', display: 'block' }}>
-                        {errors.business_phone}
-                      </span>
+                  </div>
+                  <button 
+                    type="submit" 
+                    className="submit-btn" 
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      gap: '0.5rem', 
+                      marginTop: '1rem',
+                      width: '100%' 
+                    }}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader size={18} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                        Parsing and Registering...
+                      </>
+                    ) : (
+                      <>
+                        Parse and Register
+                        <Sparkles size={18} />
+                      </>
                     )}
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Verified Email</label>
-                    <input 
-                      type="email" 
-                      placeholder="contact@example.com"
-                      value={newBusiness.business_email}
-                      onChange={(e) => setNewBusiness({ ...newBusiness, business_email: e.target.value })}
-                      onBlur={(e) => validateField('business_email', e.target.value)}
-                    />
-                    {errors.business_email && (
-                      <span style={{ color: '#EF4444', fontSize: '0.75rem', marginTop: '0.35rem', display: 'block' }}>
-                        {errors.business_email}
-                      </span>
-                    )}
-                  </div>
-                  <div className="form-group">
-                    <label>Verified Address</label>
-                    <input 
-                      type="text" 
-                      placeholder="123 Business Way, San Jose, CA"
-                      value={newBusiness.business_address}
-                      onChange={(e) => setNewBusiness({ ...newBusiness, business_address: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <button type="submit" className="submit-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
-                  Register and Start Crawling
-                  <ArrowRight size={18} />
-                </button>
-              </form>
+                  </button>
+                </form>
+              )}
             </div>
 
             {/* CSV Import Zone */}

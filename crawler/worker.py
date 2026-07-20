@@ -175,20 +175,29 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
                         (phone, address, email, map_url, business_id)
                     )
                     
-                    # 2. Delete old vectors
-                    cur.execute("DELETE FROM public.knowledge_chunks WHERE business_id = %s", (business_id,))
+                    # 2. Delete old vectors (only those from crawler or null source)
+                    cur.execute(
+                        """
+                        DELETE FROM public.knowledge_chunks 
+                        WHERE business_id = %s 
+                          AND (metadata IS NULL OR metadata->>'source' = 'crawler')
+                        """,
+                        (business_id,)
+                    )
                     
                     # 3. Batch insert new vectors
                     for chunk in chunks:
                         chunk_text = chunk.page_content
                         vector = embeddings_model.embed_query(chunk_text)
                         
+                        import json
+                        metadata_json = json.dumps({"source": "crawler"})
                         cur.execute(
                             """
                             INSERT INTO public.knowledge_chunks (business_id, content, embedding, metadata)
                             VALUES (%s, %s, %s, %s)
                             """,
-                            (business_id, chunk_text, str(vector), None)
+                            (business_id, chunk_text, str(vector), metadata_json)
                         )
                     
                     # 4. Fetch admin_chat_id and final contact details to alert them

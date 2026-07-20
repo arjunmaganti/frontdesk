@@ -25,6 +25,9 @@ services:
     restart: always
     env_file:
       - .env
+    volumes:
+      - ./crawler/worker.py:/app/crawler/worker.py
+      - ./agent:/app/agent
     logging:
       driver: "json-file"
       options:
