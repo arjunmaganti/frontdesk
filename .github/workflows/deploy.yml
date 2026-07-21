@@ -27,7 +27,7 @@ jobs:
             git checkout main
             git pull origin main
             docker compose up -d --build
-            docker compose restart
+            docker compose restart admin webapp
             # Run database migrations and reload API schema cache automatically
             docker compose exec -T crawler python crawler/run_migration.py
 
