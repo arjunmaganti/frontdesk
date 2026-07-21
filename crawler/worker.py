@@ -120,43 +120,53 @@ def process_crawl_job(job_id: str, business_id: str, website_url: str) -> bool:
     """Executes the crawl, generates vector embeddings, and updates Supabase inside a transaction."""
     logger.info(f"🔄 Processing crawl job {job_id} for Business: '{business_id}' (URL: {website_url})")
     
+    has_website = bool(website_url and website_url.strip())
+    
     # 1. Setup temporary directory for crawl results
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
-            # A. Execute website scraper
-            crawl_site(website_url, temp_dir, max_pages=15, max_depth=2)
-            
-            # B. Extract coordinates (Phone, Address & Email) using Gemini
             gemini_key = config.GEMINI_API_KEY
-            coords = extract_contact_details(temp_dir, gemini_key)
-            phone = coords.get("phone")
-            address = coords.get("address")
-            email = coords.get("email")
-            
+            phone = None
+            address = None
+            email = None
             map_url = None
-            if address:
-                import urllib.parse
-                map_url = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(address)}"
+            chunks = []
             
-            # C. Load markdown files and split into chunks
-            from langchain_community.document_loaders import DirectoryLoader, TextLoader
-            from langchain_text_splitters import RecursiveCharacterTextSplitter
-            
-            loader = DirectoryLoader(temp_dir, glob="**/*.md", loader_cls=TextLoader)
-            docs = loader.load()
-            
-            if not docs:
-                raise ValueError("No pages were successfully crawled or saved as markdown.")
+            if has_website:
+                # A. Execute website scraper
+                crawl_site(website_url, temp_dir, max_pages=15, max_depth=2)
                 
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
-            chunks = text_splitter.split_documents(docs)
-            logger.info(f"📝 Split crawled text into {len(chunks)} semantic chunks.")
+                # B. Extract coordinates (Phone, Address & Email) using Gemini
+                coords = extract_contact_details(temp_dir, gemini_key)
+                phone = coords.get("phone")
+                address = coords.get("address")
+                email = coords.get("email")
+                
+                if address:
+                    import urllib.parse
+                    map_url = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(address)}"
+                
+                # C. Load markdown files and split into chunks
+                from langchain_community.document_loaders import DirectoryLoader, TextLoader
+                from langchain_text_splitters import RecursiveCharacterTextSplitter
+                
+                loader = DirectoryLoader(temp_dir, glob="**/*.md", loader_cls=TextLoader)
+                docs = loader.load()
+                
+                if docs:
+                    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+                    chunks = text_splitter.split_documents(docs)
+                    logger.info(f"📝 Split crawled text into {len(chunks)} semantic chunks.")
+                else:
+                    logger.warning("⚠️ No pages were successfully crawled or saved as markdown.")
+            else:
+                logger.info("ℹ️ No website provided. Skipping web scraping and moving directly to flyer/QR code generation.")
             
             # D. Generate vector embeddings
             from langchain_google_genai import GoogleGenerativeAIEmbeddings
             embeddings_model = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=gemini_key)
             
-            logger.info("⚡ Generating Gemini embeddings...")
+            logger.info("🧠 Generating Gemini embeddings...")
             
             # E. Perform Database Transaction updates using psycopg2
             conn = get_pg_connection()

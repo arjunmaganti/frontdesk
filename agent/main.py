@@ -2,7 +2,7 @@ import sys
 import logging
 import asyncio
 import uvicorn
-from fastapi import FastAPI, Depends, Header, HTTPException
+from fastapi import FastAPI, Depends, Header, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Union, List, Dict
@@ -38,6 +38,9 @@ class ChatRequest(BaseModel):
     thread_id: str = "test_thread"
 
 class ParseTextRequest(BaseModel):
+    text: str
+
+class UpdateDetailsRequest(BaseModel):
     text: str
 
 @api_app.post("/api/chat")
@@ -170,14 +173,6 @@ async def insert_business_load(data: Union[Dict, List[Dict]], _user: dict = Depe
                 row["website_url"] = row["website_url"].strip()
 
         resp = sb.table("business_load").insert(rows).execute()
-        
-        # Delete crawl jobs for any inserted row that has no website_url
-        for row in rows:
-            if not row.get("website_url"):
-                try:
-                    sb.table("crawl_jobs").delete().eq("business_id", row.get("business_id")).execute()
-                except Exception as del_err:
-                    logger.warning(f"Failed to delete crawl job for empty website_url: {del_err}")
 
         return {"success": True, "data": resp.data}
     except Exception as e:
@@ -277,13 +272,6 @@ async def parse_text_and_ingest(req: ParseTextRequest, _user: dict = Depends(val
         from src.db import get_supabase_client
         sb = get_supabase_client()
         resp = sb.table("business_load").insert(payload).execute()
-        
-        # If website_url is empty, delete the automatically created crawl job
-        if not web_url:
-            try:
-                sb.table("crawl_jobs").delete().eq("business_id", slug).execute()
-            except Exception as del_err:
-                logger.warning(f"Failed to delete crawl job for empty website_url in parse-text: {del_err}")
                 
         # Chunk raw_text and store in knowledge_chunks as manually dumped knowledge
         try:
@@ -358,6 +346,200 @@ async def delete_business_load(business_id: str, _user: dict = Depends(validate_
     except Exception as e:
         logger.error(f"Error deleting business load: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.get("/api/businesses/{business_id}/details")
+async def get_business_details(business_id: str, _user: dict = Depends(validate_token)):
+    try:
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        
+        # Query public.knowledge_chunks with source = raw_markdown
+        resp = sb.table("knowledge_chunks").select("content, metadata").eq("business_id", business_id).execute()
+        
+        chunks = []
+        if resp.data:
+            for item in resp.data:
+                metadata = item.get("metadata") or {}
+                if metadata.get("source") == "raw_markdown":
+                    chunks.append(item)
+            
+            # Sort by chunk_index
+            chunks.sort(key=lambda x: (x.get("metadata") or {}).get("chunk_index", 0))
+            
+        concatenated = "\n\n".join([c["content"] for c in chunks])
+        return {"text": concatenated}
+    except Exception as e:
+        logger.error(f"Error fetching manual details for business {business_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_app.post("/api/businesses/{business_id}/update-details")
+async def update_business_details(business_id: str, req: UpdateDetailsRequest, _user: dict = Depends(validate_token)):
+    raw_text = req.text.strip()
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Text dump cannot be empty")
+        
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_core.messages import SystemMessage, HumanMessage
+        import json
+        import re
+        
+        # 1. Parse text using gemini-2.5-flash
+        model_name = "gemini-2.5-flash"
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=config.GEMINI_API_KEY,
+            temperature=0.0
+        )
+        
+        system_prompt = (
+            "Analyze the business onboarding details provided by the user and extract the following fields:\n"
+            "1. business_name: The name of the business (Mandatory! If not found, return null).\n"
+            "2. website_url: The official website URL of the business. Make sure it starts with http:// or https://. (Optional. Return null if not found).\n"
+            "3. agent_name: The name of the AI receptionist/assistant (Optional. Default to 'Sarah' if not specified).\n"
+            "4. business_phone: The business phone number. Format it as international digits: +1XXXXXXXXXX (e.g. +14082105851). (Optional. Return null if not found).\n"
+            "5. business_email: The business email address. (Optional. Return null if not found).\n"
+            "6. business_address: The physical street address of the business. (Optional. Return null if not found).\n\n"
+            "You MUST respond ONLY with a raw JSON object (no markdown, no backticks, no wrap, no extra text) in this exact schema:\n"
+            '{\n'
+            '  "business_name": "Name of Business",\n'
+            '  "website_url": "https://example.com",\n'
+            '  "agent_name": "Kim",\n'
+            '  "business_phone": "+14085551212",\n'
+            '  "business_email": "contact@domain.com",\n'
+            '  "business_address": "Street Address, City, State ZIP"\n'
+            '}'
+        )
+        
+        response = await asyncio.to_thread(
+            llm.invoke,
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=raw_text)
+            ]
+        )
+        
+        resp_text = response.content
+        if isinstance(resp_text, list):
+            resp_text = "".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in resp_text])
+        else:
+            resp_text = str(resp_text)
+            
+        resp_text = resp_text.strip()
+        if resp_text.startswith("```"):
+            lines = resp_text.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines[-1].startswith("```"):
+                lines = lines[:-1]
+            resp_text = "\n".join(lines).strip()
+            
+        parsed_data = json.loads(resp_text)
+        
+        # Validate business_name
+        biz_name = parsed_data.get("business_name")
+        if not biz_name or not biz_name.strip():
+            from src.db import get_supabase_client
+            sb = get_supabase_client()
+            existing = sb.table("businesses").select("business_name").eq("business_id", business_id).execute()
+            if existing.data:
+                biz_name = existing.data[0].get("business_name")
+            else:
+                raise HTTPException(status_code=400, detail="Could not extract a valid 'business_name' from the text dump.")
+        
+        web_url = (parsed_data.get("website_url") or "").strip()
+        
+        # 2. Update public.businesses profile
+        from src.db import get_pg_connection
+        conn = get_pg_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE public.businesses 
+                    SET business_name = %s,
+                        agent_name = %s,
+                        website_url = %s,
+                        business_phone = %s,
+                        business_email = %s,
+                        business_address = %s
+                    WHERE business_id = %s
+                    """,
+                    (
+                        biz_name.strip(),
+                        (parsed_data.get("agent_name") or "Sarah").strip(),
+                        web_url,
+                        parsed_data.get("business_phone") or None,
+                        parsed_data.get("business_email") or None,
+                        parsed_data.get("business_address") or None,
+                        business_id
+                    )
+                )
+            conn.commit()
+        finally:
+            conn.close()
+            
+        # 3. Queue a crawl job so the worker regenerates the PDF flyer & QR code (and/or crawls website if updated)
+        from src.db import get_supabase_client
+        sb = get_supabase_client()
+        try:
+            # Delete any existing jobs for this business first to avoid duplicate conflicts
+            sb.table("crawl_jobs").delete().eq("business_id", business_id).execute()
+            # Insert a new pending job
+            sb.table("crawl_jobs").insert({
+                "business_id": business_id,
+                "website_url": web_url,
+                "status": "pending"
+            }).execute()
+            logger.info(f"🔄 Queued new flyer/QR generation job for {business_id}.")
+        except Exception as queue_err:
+            logger.error(f"Error queueing flyer/QR regeneration in update-details: {queue_err}")
+                
+        # 4. Chunk, embed, and store raw_text manual chunks
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+        chunks = text_splitter.split_text(raw_text)
+        
+        embeddings_model = GoogleGenerativeAIEmbeddings(
+            model="models/gemini-embedding-001",
+            google_api_key=config.GEMINI_API_KEY
+        )
+        
+        conn = get_pg_connection()
+        try:
+            with conn.cursor() as cur:
+                # Delete existing custom chunks for this business
+                cur.execute(
+                    "DELETE FROM public.knowledge_chunks WHERE business_id = %s AND metadata->>'source' = 'raw_markdown'",
+                    (business_id,)
+                )
+                
+                # Insert new chunks
+                for i, chunk_text in enumerate(chunks):
+                    vector = embeddings_model.embed_query(chunk_text)
+                    metadata_json = json.dumps({"source": "raw_markdown", "chunk_index": i})
+                    cur.execute(
+                        """
+                        INSERT INTO public.knowledge_chunks (business_id, content, embedding, metadata)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (business_id, chunk_text, str(vector), metadata_json)
+                    )
+            conn.commit()
+        except Exception as db_err:
+            logger.error(f"Error saving manual knowledge chunks for updated business: {db_err}")
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=f"Database error updating knowledge chunks: {str(db_err)}")
+        finally:
+            conn.close()
+            
+        return {"success": True, "message": "Business details updated successfully."}
+    except Exception as e:
+        logger.error(f"Error updating business details for {business_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # =====================================================================
 # Web App Receptionist Endpoints (Public/Anonymous Visitor)
 # =====================================================================

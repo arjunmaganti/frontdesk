@@ -14,7 +14,8 @@ import {
   Trash2,
   Search,
   ExternalLink,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import {
   AreaChart,
@@ -209,6 +210,11 @@ export default function App() {
   const [textDump, setTextDump] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  // Edit Business Details states
+  const [editTextDump, setEditTextDump] = useState<string>('');
+  const [editLoading, setEditLoading] = useState<boolean>(false);
+  const [editMsg, setEditMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
   // Auth Listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -371,9 +377,23 @@ export default function App() {
     }
   };
 
+  const loadBusinessDetails = async (bizId: string) => {
+    try {
+      setEditMsg(null);
+      const response = await authenticatedFetch(`${API_BASE}/businesses/${bizId}/details`);
+      if (!response.ok) throw new Error("Failed to load business details");
+      const data = await response.json();
+      setEditTextDump(data.text || '');
+    } catch (err) {
+      console.error("Error loading business details:", err);
+      setEditTextDump('');
+    }
+  };
+
   useEffect(() => {
     if (selectedDirectoryBusinessId) {
       loadBusinessChunks(selectedDirectoryBusinessId);
+      loadBusinessDetails(selectedDirectoryBusinessId);
     } else if (businesses.length > 0) {
       setSelectedDirectoryBusinessId(businesses[0].business_id);
     }
@@ -556,6 +576,42 @@ export default function App() {
       setFormMsg({ type: 'error', text: `Parsing failed: ${err.message}` });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSaveDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDirectoryBusinessId) return;
+    setEditMsg(null);
+    setEditLoading(true);
+    try {
+      const res = await authenticatedFetch(`${API_BASE}/businesses/${selectedDirectoryBusinessId}/update-details`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: editTextDump })
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to update details");
+      }
+      setEditMsg({ type: 'success', text: "Successfully updated business details and vector index! Re-compiling marketing flyer & QR code in background..." });
+      // Refresh list to pull any updated fields
+      loadData();
+    } catch (err: any) {
+      setEditMsg({ type: 'error', text: `Failed: ${err.message}` });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleRefreshActiveBusiness = async () => {
+    if (!selectedDirectoryBusinessId) return;
+    try {
+      await loadData();
+      await loadBusinessDetails(selectedDirectoryBusinessId);
+      await loadBusinessChunks(selectedDirectoryBusinessId);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -1567,6 +1623,27 @@ export default function App() {
                           </a>
                         )}
                         <button
+                          onClick={handleRefreshActiveBusiness}
+                          style={{
+                            padding: '0.4rem 0.8rem',
+                            fontSize: '0.8rem',
+                            backgroundColor: 'rgba(0, 210, 255, 0.1)',
+                            color: '#00D2FF',
+                            border: '1px solid rgba(0, 210, 255, 0.2)',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 210, 255, 0.2)'}
+                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 210, 255, 0.1)'}
+                        >
+                          <RefreshCw size={12} />
+                          Refresh Assets & Status
+                        </button>
+                        <button
                           onClick={() => setDeleteConfirmId(b.business_id)}
                           style={{
                             padding: '0.4rem 0.8rem',
@@ -1683,6 +1760,69 @@ export default function App() {
                             💬 Launch Mobile WebApp Chat ({window.location.hostname}:8080/?biz={b.business_id})
                           </a>
                         </div>
+                      </div>
+
+                      {/* Section 2.5: Edit Business Details (Text Dump) */}
+                      <div>
+                        <h4 style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--primary)', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
+                          Edit Business Details (Text Dump)
+                        </h4>
+                        
+                        {editMsg && (
+                          <div style={{ padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem', backgroundColor: editMsg.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: editMsg.type === 'success' ? '#10B981' : '#EF4444', fontSize: '0.8rem' }}>
+                            {editMsg.text}
+                          </div>
+                        )}
+
+                        <form onSubmit={handleSaveDetails}>
+                          <textarea
+                            placeholder={`Paste updated business markdown or unstructured text details here.\nE.g.:\nBusiness Name: Glow Hair Studio\nPhone: +1 (408) 555-1212\nWe are closed on Sunday.\nHaircuts are $25+`}
+                            value={editTextDump}
+                            onChange={(e) => setEditTextDump(e.target.value)}
+                            rows={8}
+                            style={{
+                              width: '100%',
+                              padding: '0.75rem',
+                              fontSize: '0.8rem',
+                              lineHeight: '1.4',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-card)',
+                              backgroundColor: 'rgba(0,0,0,0.2)',
+                              color: 'var(--text-main)',
+                              resize: 'vertical',
+                              fontFamily: 'inherit',
+                              minHeight: '120px',
+                              marginBottom: '0.75rem'
+                            }}
+                            disabled={editLoading}
+                          />
+                          <button 
+                            type="submit" 
+                            className="submit-btn" 
+                            style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              gap: '0.5rem', 
+                              fontSize: '0.8rem',
+                              padding: '0.5rem 1rem',
+                              width: '100%' 
+                            }}
+                            disabled={editLoading}
+                          >
+                            {editLoading ? (
+                              <>
+                                <Loader size={14} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                                Saving and Reparsing...
+                              </>
+                            ) : (
+                              <>
+                                Save & Reparse Details
+                                <Sparkles size={14} />
+                              </>
+                            )}
+                          </button>
+                        </form>
                       </div>
 
                       {/* Section 3: Knowledge Base Inspector (Vector DB chunks) */}
