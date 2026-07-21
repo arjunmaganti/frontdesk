@@ -16,7 +16,7 @@ jobs:
           fetch-depth: 0
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DROPLET_IP }}
           username: root
@@ -27,6 +27,7 @@ jobs:
             git checkout main
             git pull origin main
             docker compose up -d --build
+            docker compose restart
             # Run database migrations and reload API schema cache automatically
             docker compose exec -T crawler python crawler/run_migration.py
 
