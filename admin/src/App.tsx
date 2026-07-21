@@ -1740,7 +1740,7 @@ export default function App() {
                           )}
 
                           <a 
-                            href={`${window.location.protocol}//${window.location.hostname}:8080/?biz=${b.business_id}`}
+                            href={`http://${window.location.hostname}:8080/?biz=${b.business_id}`}
                             target="_blank" 
                             rel="noreferrer"
                             style={{ 
